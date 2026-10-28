@@ -2,9 +2,9 @@
 <html lang="th">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <title>MM Bakery • ใบเบิกสินค้า</title>
-    <link rel="stylesheet" href="Style.css?v=requisition-print-20261028" />
+    <link rel="stylesheet" href="Style.css?v=invoice-table-20261028" />
   </head>
   <body>
     <header>
@@ -64,8 +64,8 @@
                   id="department"
                   placeholder="เช่น คลังสินค้า"
                   maxlength="150" /></label
-              ><label>วันที่ขอเบิก<input id="date" type="date" /></label
-              ><label
+              ><label for="date">วันที่ขอเบิก *<input id="date" name="requestDate" type="date" required /></label>
+              <label
                 >เลขที่เอกสาร<input
                   id="docno"
                   value="ออกเลขเมื่อบันทึกลง Sheets"
@@ -190,7 +190,7 @@
         </button>
       </div>
       <p id="scannerStatus" class="scanner-status" role="status" aria-live="polite">
-        เปิดกล้องสแกน หรือเลือกภาพบาร์โค้ด
+        เปิดกล้องสแกน หรือกรอกบาร์โค้ดสินค้า
       </p>
       <div class="scanbox">
         <div class="scanner-preview" id="scannerPreview" hidden>
@@ -207,21 +207,6 @@
           </button>
           <button id="stopScannerBtn" onclick="stopCameraScan()" hidden>หยุดกล้อง</button>
         </div>
-        <button
-          class="primary"
-          id="cameraBtn"
-          onclick="document.getElementById('photo').click()"
-        >
-          ถ่ายภาพ / เลือกรูปบาร์โค้ด</button
-        ><input
-          type="file"
-          id="photo"
-          accept="image/*"
-          capture="environment"
-          hidden
-          style="display: none"
-          onchange="scanPhoto(this)"
-        />
       </div>
       <label for="barcode">หรือกรอกบาร์โค้ด / ใช้เครื่องสแกน</label>
       <div class="entry space" style="margin-top: 8px">
@@ -304,9 +289,16 @@
         </button>
       </div>
     </dialog>
+    <dialog id="validationDialog" role="alertdialog" aria-labelledby="validationTitle" aria-describedby="validationMessage">
+      <h2 id="validationTitle">กรุณาตรวจสอบข้อมูล</h2>
+      <p id="validationMessage" class="validation-message"></p>
+      <div class="actions">
+        <button id="validationOkBtn" type="button" class="primary" autofocus onclick="document.getElementById('validationDialog').close()">ตกลง</button>
+      </div>
+    </dialog>
     <section id="printArea"></section>
 
     <script async src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-    <script src="App.js?v=requisition-print-20261028"></script>
+    <script src="App.js?v=invoice-table-20261028"></script>
   </body>
 </html>

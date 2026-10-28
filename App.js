@@ -30,6 +30,7 @@ let documentHistory = [];
 let historyBusy = false;
 let historyReloadQueued = false;
 let displayedHistoryId = "";
+let validationTarget = null;
 
 function viewingHistoryDocument() {
   return !!displayedHistoryId && displayedHistoryId === requestId && (saved || editing || pending?.operation === "update");
@@ -41,6 +42,15 @@ function editableDocumentStatus(status) {
 
 function documentStage(status) {
   return editableDocumentStatus(status) ? "จัดเตรียม" : String(status).trim();
+}
+
+function bangkokToday(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok", calendar: "gregory", numberingSystem: "latn",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now);
+  const value = (type) => parts.find((part) => part.type === type).value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
 function historyControls() {
@@ -391,6 +401,31 @@ function notify(text, error = false) {
   $("message").className = "toast" + (error ? " error" : "");
   $("message").style.display = "block";
   if ($("scannerDialog")?.open) scannerMessage(text, error);
+  if (error && !["welcomeDialog", "scannerDialog", "productDialog", "settings", "validationDialog"].some((id) => $(id)?.open)) {
+    $("message").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+function preventPinchZoom(event) {
+  if (event.type === "gesturestart" || event.type === "gesturechange" || event.touches?.length > 1) {
+    event.preventDefault();
+  }
+}
+
+function validationFailure(message, input) {
+  validationTarget = input || null;
+  if (input) input.setCustomValidity(message);
+  $("validationMessage").textContent = message;
+  if (!$("validationDialog").open) $("validationDialog").showModal();
+  return false;
+}
+
+function focusValidationTarget() {
+  const input = validationTarget;
+  validationTarget = null;
+  if (!input || input.isConnected === false || input.disabled) return;
+  input.scrollIntoView({ behavior: "instant", block: "center" });
+  input.focus({ preventScroll: true });
 }
 
 function sheetId(value) {
@@ -1003,6 +1038,7 @@ function render() {
           max="1000000"
           step="any"
           value="${product.qty}"
+          oninput="items[${index}].qty = Number(this.value)"
           onchange="items[${index}].qty = Number(this.value)"
         >
       </td>
@@ -1141,7 +1177,6 @@ function searchProducts() {
 let scannerReader = null;
 let scannerStream = null;
 let scannerGeneration = 0;
-let scannerReadingPhoto = false;
 let scannerStarting = false;
 
 function scannerMessage(text, error = false) {
@@ -1163,7 +1198,7 @@ function openScanner() {
   $("scannerDialog").showModal();
   document.body.classList.add("scanner-open");
   $("scannerCount").textContent = items.length + " รายการในใบเบิก";
-  scannerMessage("เปิดกล้องสแกน หรือถ่ายภาพ/เลือกรูปบาร์โค้ด");
+  scannerMessage("เปิดกล้องสแกน หรือกรอกบาร์โค้ดสินค้า");
 }
 
 function stopCameraScan() {
@@ -1180,7 +1215,7 @@ function stopCameraScan() {
   $("scannerVideo").srcObject = null;
   $("scannerPreview").hidden = true;
   $("scannerPlaceholder").hidden = false;
-  $("startScannerBtn").disabled = scannerReadingPhoto;
+  $("startScannerBtn").disabled = false;
   $("stopScannerBtn").hidden = true;
 }
 
@@ -1192,7 +1227,7 @@ function closeScanner() {
 }
 
 async function startCameraScan() {
-  if (scannerStarting || scannerReader || scannerReadingPhoto) return;
+  if (scannerStarting || scannerReader) return;
   if (!$("scannerDialog").open || busy || saved || pending) return;
   if (!window.ZXing) {
     scannerMessage("โหลดตัวอ่านบาร์โค้ดไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ต", true);
@@ -1200,7 +1235,7 @@ async function startCameraScan() {
   }
   if (!navigator.mediaDevices?.getUserMedia) {
     scannerMessage(
-      "เบราว์เซอร์นี้เปิดกล้องสดไม่ได้ กรุณาใช้ปุ่มถ่ายภาพ/เลือกรูปแทน",
+      "เบราว์เซอร์นี้เปิดกล้องสดไม่ได้ กรุณากรอกบาร์โค้ดหรือค้นหาสินค้าแทน",
       true,
     );
     return;
@@ -1245,49 +1280,12 @@ async function startCameraScan() {
     stopCameraScan();
     scannerMessage(
       error.name === "NotAllowedError"
-        ? "ยังไม่ได้อนุญาตกล้อง ให้เปิดสิทธิ์กล้อง หรือใช้ปุ่มถ่ายภาพ/เลือกรูปแทน"
-        : "เปิดกล้องไม่สำเร็จ กรุณาลองใหม่ หรือใช้ปุ่มถ่ายภาพ/เลือกรูปแทน",
+        ? "ยังไม่ได้อนุญาตกล้อง ให้เปิดสิทธิ์กล้อง หรือกรอกบาร์โค้ดแทน"
+        : "เปิดกล้องไม่สำเร็จ กรุณาลองใหม่ หรือกรอกบาร์โค้ดแทน",
       true,
     );
   } finally {
     if (generation === scannerGeneration) scannerStarting = false;
-  }
-}
-
-async function scanPhoto(input) {
-  const file = input.files?.[0];
-  if (!file || scannerReadingPhoto || saved || busy || pending) return;
-  if (!$("scannerDialog").open) return;
-
-  stopCameraScan();
-  const generation = scannerGeneration;
-  scannerReadingPhoto = true;
-  $("cameraBtn").disabled = true;
-  $("startScannerBtn").disabled = true;
-  scannerMessage("กำลังอ่านบาร์โค้ดจากภาพ…");
-  let url;
-  let reader;
-
-  try {
-    if (!window.ZXing) throw new Error("ยังโหลดตัวอ่านบาร์โค้ดไม่สำเร็จ");
-    reader = new ZXing.BrowserMultiFormatReader();
-    url = URL.createObjectURL(file);
-    const result = await reader.decodeFromImageUrl(url);
-
-    if (generation === scannerGeneration && $("scannerDialog").open) {
-      addProduct(result.getText());
-    }
-  } catch {
-    if (generation === scannerGeneration && $("scannerDialog").open) {
-      scannerMessage("อ่านบาร์โค้ดไม่สำเร็จ ลองภาพที่ชัดขึ้น หรือกรอกเลขบาร์โค้ด", true);
-    }
-  } finally {
-    if (reader) reader.reset();
-    if (url) URL.revokeObjectURL(url);
-    input.value = "";
-    scannerReadingPhoto = false;
-    $("cameraBtn").disabled = false;
-    $("startScannerBtn").disabled = false;
   }
 }
 
@@ -1302,21 +1300,18 @@ function payload() {
   };
 }
 function valid() {
-  if (!$("requester").value.trim() || !$("department").value.trim() || !$("date").value) {
-    notify("กรุณากรอกผู้ขอเบิก แผนก และวันที่", true);
-    return false;
+  const missing = [];
+  for (const [id, message] of [["requester", "กรุณากรอกชื่อผู้ขอเบิก"], ["department", "กรุณากรอกแผนก / หน่วยงาน"], ["date", "กรุณาระบุวันที่ขอเบิก"]]) {
+    $(id).setCustomValidity("");
+    if (!$(id).value.trim()) missing.push({ input: $(id), message });
   }
-  if (
-    !settings ||
-    !items.length ||
-    items.length > 500 ||
-    items.some((p) => !Number.isFinite(p.qty) || p.qty <= 0 || p.qty > 1000000)
-  ) {
-    notify(
-      "กรุณาตั้งค่าชีต เพิ่มสินค้าไม่เกิน 500 รายการ และระบุจำนวนมากกว่า 0 ไม่เกิน 1,000,000",
-      true,
-    );
-    return false;
+  if (missing.length) return validationFailure(missing.map((field) => "• " + field.message).join("\n"), missing[0].input);
+  if (!settings) return validationFailure("กรุณาตั้งค่าชีตก่อนบันทึกหรือพิมพ์ใบเบิก");
+  if (!items.length || items.length > 500) return validationFailure("กรุณาเพิ่มสินค้า 1 ถึง 500 รายการก่อนบันทึกหรือพิมพ์");
+  const invalidQuantity = items.findIndex((p) => !Number.isFinite(p.qty) || p.qty <= 0 || p.qty > 1000000);
+  if (invalidQuantity >= 0) {
+    const root = $(viewingHistoryDocument() ? "historyItems" : "items");
+    return validationFailure("กรุณาระบุจำนวนของ " + items[invalidQuantity].name + " มากกว่า 0 และไม่เกิน 1,000,000", root.querySelectorAll('input[type="number"]')[invalidQuantity]);
   }
   return true;
 }
@@ -1341,6 +1336,10 @@ function printDoc() {
     )
     .join("");
 
+  const emptyPrintRows = Array.from({ length: Math.max(0, 20 - items.length) }, () =>
+    '<tr class="print-empty-row" aria-hidden="true"><td></td><td></td><td></td><td></td><td></td></tr>'
+  ).join("");
+
   $("printArea").innerHTML = `
     <div class="print-heading">
       <div class="print-brand">MM Bakery<small>เอกสารเบิกสินค้า</small></div>
@@ -1357,17 +1356,17 @@ function printDoc() {
       </div>
     </div>
     <table class="print-items">
-      <colgroup><col style="width:8%"><col style="width:22%"><col style="width:44%"><col style="width:14%"><col style="width:12%"></colgroup>
+      <colgroup><col style="width:6%"><col style="width:20%"><col style="width:50%"><col style="width:12%"><col style="width:12%"></colgroup>
       <thead>
         <tr>
-          <th>ลำดับ</th>
+          <th>#</th>
           <th>บาร์โค้ด</th>
           <th>รายการสินค้า</th>
           <th>จำนวนเบิก</th>
           <th>หน่วยนับ</th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows}${emptyPrintRows}</tbody>
     </table>
     <div class="print-item-total">รวมรายการสินค้าทั้งหมด <strong>${items.length}</strong> รายการ</div>
     <div class="print-reason"><strong>เหตุผลในการเบิก / หมายเหตุ</strong><p>${esc(documentData.reason || "—")}</p></div>
@@ -1378,7 +1377,12 @@ function printDoc() {
     </div>
   `;
 
-  window.print();
+  try {
+    if (typeof window.print !== "function") throw new Error("Printing unavailable");
+    window.print();
+  } catch {
+    notify("เบราว์เซอร์นี้ไม่เปิดหน้าพิมพ์ กรุณาเปิดเว็บด้วยเบราว์เซอร์หลักของเครื่องแล้วลองพิมพ์ / PDF อีกครั้ง", true);
+  }
 }
 
 function resetDraft() {
@@ -1391,6 +1395,7 @@ function resetDraft() {
   $("historySelect").value = "";
   requestId = newId();
   $("docno").value = "ออกเลขเมื่อบันทึกลง Sheets";
+  $("date").value = bangkokToday();
   $("reason").value = "";
   if (activeUser?.role === "requisition") $("requester").value = activeUser.name;
   $("results").replaceChildren();
@@ -1407,6 +1412,13 @@ function newDoc() {
 }
 
 async function init() {
+  $("validationDialog").addEventListener("close", focusValidationTarget);
+  for (const type of ["touchstart", "touchmove", "gesturestart", "gesturechange"]) {
+    document.addEventListener(type, preventPinchZoom, { passive: false });
+  }
+  document.addEventListener("input", (event) => {
+    if (typeof event.target?.setCustomValidity === "function") event.target.setCustomValidity("");
+  });
   $("productForm").addEventListener("submit", confirmProduct);
   $("productDialog").addEventListener("close", () => { selectedProduct = null; });
   $("welcomeForm").addEventListener("submit", enterWorkspace);
@@ -1415,12 +1427,7 @@ async function init() {
     if (!activeUser) event.preventDefault();
   });
   $("welcomeDialog").showModal();
-  $("date").value = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  $("date").value = bangkokToday();
 
   const cfg = readLocal(STORAGE, null);
 
