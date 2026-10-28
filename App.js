@@ -18,7 +18,20 @@ let catalogLoaded = false;
 let requestId = newId();
 
 function newId() {
-  return crypto.randomUUID();
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+
+  // รองรับหน้า preview ที่ไม่มี randomUUID โดยยังใช้เลขสุ่มจากเบราว์เซอร์
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
 }
 
 function readLocal(key, fallback) {
@@ -51,6 +64,7 @@ function notify(text, error = false) {
   $("message").textContent = text;
   $("message").className = "toast" + (error ? " error" : "");
   $("message").style.display = "block";
+  if ($("scannerDialog")?.open) scannerMessage(text, error);
 }
 
 function sheetId(value) {
@@ -604,6 +618,7 @@ function render() {
   $("total").textContent = items.length;
   $("listCount").textContent = items.length + " รายการ";
   $("empty").hidden = !!items.length;
+  $("scannerCount").textContent = items.length + " รายการในใบเบิก";
   state();
 }
 
@@ -634,10 +649,12 @@ function addProduct(code) {
   render();
   notify("เพิ่ม " + p.name + " ลงหัวข้อ 03 รายการขอเบิกแล้ว");
 
-  $("requestItemsSection").scrollIntoView({
-    behavior: "smooth",
-    block: "nearest",
-  });
+  if (!$("scannerDialog").open) {
+    $("requestItemsSection").scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }
 }
 function addBarcode() {
   const code = $("barcode").value.trim();
@@ -667,41 +684,160 @@ function searchProducts() {
   }
   if (!matches.length) root.textContent = "ไม่พบสินค้า";
 }
-async function scanPhoto(input) {
-  const f = input.files?.[0];
-  if (!f || saved || busy || pending) return;
-  if (!products.length) {
-    notify("กรุณาตั้งค่าชีตและโหลดสินค้าก่อนสแกน", true);
-    input.value = "";
+// วงจรกล้องแยกจากสถานะใบเบิก ปิด Popup แล้วต้องหยุดกล้องเสมอ
+let scannerReader = null;
+let scannerStream = null;
+let scannerGeneration = 0;
+let scannerReadingPhoto = false;
+let scannerStarting = false;
+
+function scannerMessage(text, error = false) {
+  $("scannerStatus").textContent = text;
+  $("scannerStatus").className = "scanner-status" + (error ? " error" : "");
+}
+
+function openScanner() {
+  if (busy || saved || pending) return;
+  if (!settings) {
+    openSettings();
     return;
   }
-  let url;
-  const b = $("cameraBtn");
-  b.disabled = true;
-  b.textContent = "กำลังอ่านบาร์โค้ด…";
+  if (!catalogLoaded) {
+    notify("กรุณากดโหลดใหม่เพื่อโหลดรายการสินค้าก่อนเปิดสแกน", true);
+    return;
+  }
+
+  $("scannerDialog").showModal();
+  document.body.classList.add("scanner-open");
+  $("scannerCount").textContent = items.length + " รายการในใบเบิก";
+  scannerMessage("เปิดกล้องสแกน หรือถ่ายภาพ/เลือกรูปบาร์โค้ด");
+}
+
+function stopCameraScan() {
+  scannerGeneration++;
+  scannerStarting = false;
+  if (scannerReader) {
+    scannerReader.reset();
+    scannerReader = null;
+  }
+  if (scannerStream) {
+    scannerStream.getTracks().forEach((track) => track.stop());
+    scannerStream = null;
+  }
+  $("scannerVideo").srcObject = null;
+  $("scannerPreview").hidden = true;
+  $("scannerPlaceholder").hidden = false;
+  $("startScannerBtn").disabled = scannerReadingPhoto;
+  $("stopScannerBtn").hidden = true;
+}
+
+function closeScanner() {
+  stopCameraScan();
+  $("scannerDialog").close();
+  document.body.classList.remove("scanner-open");
+  $("requestItemsSection").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function startCameraScan() {
+  if (scannerStarting || scannerReader || scannerReadingPhoto) return;
+  if (!$("scannerDialog").open || busy || saved || pending) return;
+  if (!window.ZXing) {
+    scannerMessage("โหลดตัวอ่านบาร์โค้ดไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ต", true);
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    scannerMessage(
+      "เบราว์เซอร์นี้เปิดกล้องสดไม่ได้ กรุณาใช้ปุ่มถ่ายภาพ/เลือกรูปแทน",
+      true,
+    );
+    return;
+  }
+
+  stopCameraScan();
+  const generation = scannerGeneration;
+  scannerStarting = true;
+  $("startScannerBtn").disabled = true;
+  scannerMessage("กำลังเปิดกล้อง…");
+
   try {
-    if (!window.ZXing)
-      throw new Error(
-        "โหลดตัวอ่านบาร์โค้ดไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ต หรือกรอกบาร์โค้ด",
-      );
-    url = URL.createObjectURL(f);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: "environment" } },
+    });
+
+    // ผู้ใช้อาจปิด Popup ระหว่างรออนุญาตกล้อง
+    if (generation !== scannerGeneration || !$("scannerDialog").open) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+
+    scannerStream = stream;
     const reader = new ZXing.BrowserMultiFormatReader();
-    const result = await reader.decodeFromImageUrl(url);
-    addProduct(result.getText());
-  } catch (e) {
-    notify(
-      e.message?.includes("โหลดตัวอ่าน")
-        ? e.message
-        : "อ่านบาร์โค้ดไม่สำเร็จ ลองถ่ายภาพใหม่ให้ชัด ตรง และใกล้ขึ้น หรือกรอกบาร์โค้ด",
+    scannerReader = reader;
+    $("scannerPreview").hidden = false;
+    $("scannerPlaceholder").hidden = true;
+    $("stopScannerBtn").hidden = false;
+    scannerMessage("เล็งบาร์โค้ดให้อยู่ในกรอบ เมื่ออ่านได้จะเพิ่มครั้งละ 1 ชิ้น");
+
+    await reader.decodeFromStream(stream, $("scannerVideo"), (result) => {
+      if (!result || generation !== scannerGeneration) return;
+      const code = result.getText();
+      // อ่านได้หนึ่งครั้งแล้วหยุด ป้องกันกล้องนับสินค้าชิ้นเดิมซ้ำหลายครั้ง
+      stopCameraScan();
+      addProduct(code);
+      $("startScannerBtn").textContent = "สแกนสินค้าถัดไป";
+    });
+  } catch (error) {
+    if (generation !== scannerGeneration) return;
+    stopCameraScan();
+    scannerMessage(
+      error.name === "NotAllowedError"
+        ? "ยังไม่ได้อนุญาตกล้อง ให้เปิดสิทธิ์กล้อง หรือใช้ปุ่มถ่ายภาพ/เลือกรูปแทน"
+        : "เปิดกล้องไม่สำเร็จ กรุณาลองใหม่ หรือใช้ปุ่มถ่ายภาพ/เลือกรูปแทน",
       true,
     );
   } finally {
-    if (url) URL.revokeObjectURL(url);
-    input.value = "";
-    b.textContent = "▣ ถ่ายภาพสแกนบาร์โค้ด";
-    b.disabled = false;
+    if (generation === scannerGeneration) scannerStarting = false;
   }
 }
+
+async function scanPhoto(input) {
+  const file = input.files?.[0];
+  if (!file || scannerReadingPhoto || saved || busy || pending) return;
+  if (!$("scannerDialog").open) return;
+
+  stopCameraScan();
+  const generation = scannerGeneration;
+  scannerReadingPhoto = true;
+  $("cameraBtn").disabled = true;
+  $("startScannerBtn").disabled = true;
+  scannerMessage("กำลังอ่านบาร์โค้ดจากภาพ…");
+  let url;
+  let reader;
+
+  try {
+    if (!window.ZXing) throw new Error("ยังโหลดตัวอ่านบาร์โค้ดไม่สำเร็จ");
+    reader = new ZXing.BrowserMultiFormatReader();
+    url = URL.createObjectURL(file);
+    const result = await reader.decodeFromImageUrl(url);
+
+    if (generation === scannerGeneration && $("scannerDialog").open) {
+      addProduct(result.getText());
+    }
+  } catch {
+    if (generation === scannerGeneration && $("scannerDialog").open) {
+      scannerMessage("อ่านบาร์โค้ดไม่สำเร็จ ลองภาพที่ชัดขึ้น หรือกรอกเลขบาร์โค้ด", true);
+    }
+  } finally {
+    if (reader) reader.reset();
+    if (url) URL.revokeObjectURL(url);
+    input.value = "";
+    scannerReadingPhoto = false;
+    $("cameraBtn").disabled = false;
+    $("startScannerBtn").disabled = false;
+  }
+}
+
 function payload() {
   return {
     requestId,
@@ -855,6 +991,16 @@ async function init() {
 
     notify("กู้คืนใบเบิกที่รอยืนยันผลแล้ว กดตรวจผลบันทึกหรือบันทึกซ้ำได้");
   }
+
+  $("scannerDialog").addEventListener("close", () => {
+    stopCameraScan();
+    document.body.classList.remove("scanner-open");
+  });
+  $("scannerDialog").addEventListener("cancel", stopCameraScan);
+  window.addEventListener("pagehide", stopCameraScan);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopCameraScan();
+  });
 
   $("settings").addEventListener("cancel", (event) => {
     if (busy) event.preventDefault();

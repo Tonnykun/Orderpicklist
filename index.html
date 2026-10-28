@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>เบิกดี • ใบเบิกสินค้า</title>
-    <link rel="stylesheet" href="Style.css" />
+    <link rel="stylesheet" href="Style.css?v=scan-popup-20261028" />
   </head>
   <body>
     <header>
@@ -60,44 +60,12 @@
           </section>
           <section class="card">
             <h2><span class="step">02</span> สแกนสินค้าเพื่อสร้างใบเบิก</h2>
-            <div class="scanbox">
-              <div class="scanicon" aria-hidden="true">▌▏▎▏▌▎▏▌</div>
-              <p>
-                สแกนบาร์โค้ดจากภาพถ่าย ระบบจะค้นหาเลขบาร์โค้ดในแท็บ “สินค้า” ของ Google
-                Sheet แล้วเพิ่มชื่อสินค้าและหน่วยนับ ลงหัวข้อ 03 รายการขอเบิกโดยอัตโนมัติ
-              </p>
-              <button
-                class="primary"
-                id="cameraBtn"
-                onclick="document.getElementById('photo').click()"
-              >
-                ▣ ถ่ายภาพสแกนบาร์โค้ด</button
-              ><input
-                type="file"
-                id="photo"
-                accept="image/*"
-                capture="environment"
-                hidden
-                style="display: none"
-                onchange="scanPhoto(this)"
-              />
+            <div class="scanner-launch">
+              <p class="muted">เปิดหน้าสแกนเพื่อเพิ่มสินค้าลงรายการขอเบิก</p>
+              <button class="primary" id="openScannerBtn" onclick="openScanner()">
+                ▣ เปิดสแกนสินค้า
+              </button>
             </div>
-            <label for="barcode">หรือกรอกบาร์โค้ด / ใช้เครื่องสแกน</label>
-            <div class="entry space" style="margin-top: 8px">
-              <input
-                id="barcode"
-                placeholder="บาร์โค้ดสินค้า"
-                autocomplete="off"
-                onkeydown="if(event.key==='Enter'){event.preventDefault();addBarcode()}"
-              /><button onclick="addBarcode()">เพิ่มลงรายการขอเบิก</button>
-            </div>
-            <label class="space"
-              >ค้นหาสินค้าในชีต<input
-                id="search"
-                placeholder="ค้นหาจากชื่อ หรือบาร์โค้ด"
-                oninput="searchProducts()"
-            /></label>
-            <div id="results"></div>
           </section>
           <section class="card" id="requestItemsSection">
             <div class="topline">
@@ -163,6 +131,72 @@
       </div>
     </main>
     <footer>เบิกดี · จัดทำเอกสารขอเบิกสินค้า</footer>
+    <dialog id="scannerDialog" aria-labelledby="scannerTitle">
+      <div class="scanner-heading">
+        <div>
+          <div class="eyebrow">SCAN TO REQUISITION</div>
+          <h2 id="scannerTitle">สแกนสินค้าเพื่อสร้างใบเบิก</h2>
+        </div>
+        <button class="scanner-close" aria-label="ปิดหน้าสแกน" onclick="closeScanner()">
+          ×
+        </button>
+      </div>
+      <p id="scannerStatus" class="scanner-status" role="status" aria-live="polite">
+        เปิดกล้องสแกน หรือเลือกภาพบาร์โค้ด
+      </p>
+      <div class="scanbox">
+        <div class="scanner-preview" id="scannerPreview" hidden>
+          <video id="scannerVideo" autoplay muted playsinline></video>
+          <div class="scanner-guide" aria-hidden="true"></div>
+        </div>
+        <div id="scannerPlaceholder" class="scanner-placeholder">
+          <div class="scanicon" aria-hidden="true">▌▏▎▏▌▎▏▌</div>
+          <p>เล็งบาร์โค้ดให้ชัด ระบบจะเพิ่มสินค้าเข้าหัวข้อ 03</p>
+        </div>
+        <div class="scanner-camera-actions">
+          <button class="primary" id="startScannerBtn" onclick="startCameraScan()">
+            เปิดกล้องสแกน
+          </button>
+          <button id="stopScannerBtn" onclick="stopCameraScan()" hidden>หยุดกล้อง</button>
+        </div>
+        <button
+          class="primary"
+          id="cameraBtn"
+          onclick="document.getElementById('photo').click()"
+        >
+          ถ่ายภาพ / เลือกรูปบาร์โค้ด</button
+        ><input
+          type="file"
+          id="photo"
+          accept="image/*"
+          capture="environment"
+          hidden
+          style="display: none"
+          onchange="scanPhoto(this)"
+        />
+      </div>
+      <label for="barcode">หรือกรอกบาร์โค้ด / ใช้เครื่องสแกน</label>
+      <div class="entry space" style="margin-top: 8px">
+        <input
+          id="barcode"
+          placeholder="บาร์โค้ดสินค้า"
+          autocomplete="off"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();addBarcode()}"
+        /><button onclick="addBarcode()">เพิ่มลงรายการขอเบิก</button>
+      </div>
+      <label class="space"
+        >ค้นหาสินค้าในชีต<input
+          id="search"
+          placeholder="ค้นหาจากชื่อ หรือบาร์โค้ด"
+          oninput="searchProducts()"
+      /></label>
+      <div id="results"></div>
+
+      <div class="scanner-footer">
+        <span id="scannerCount" class="muted">0 รายการในใบเบิก</span>
+        <button class="primary" onclick="closeScanner()">เสร็จแล้ว ดูรายการขอเบิก</button>
+      </div>
+    </dialog>
     <dialog id="settings">
       <h2>ตั้งค่า Google Sheet</h2>
       <p class="muted">
@@ -205,6 +239,6 @@
     <section id="printArea"></section>
 
     <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-    <script src="App.js"></script>
+    <script src="App.js?v=scan-popup-20261028"></script>
   </body>
 </html>

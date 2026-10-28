@@ -392,6 +392,113 @@ footer {
     font-size: 13px;
   }
 }
+/* หน้าสแกนแบบ Popup: เก็บส่วนเพิ่มสินค้าให้กระชับบนหน้าหลัก */
+.scanner-launch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.scanner-launch p {
+  margin: 0;
+}
+#scannerDialog {
+  width: 590px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.scanner-heading,
+.scanner-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.scanner-heading h2 {
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+.scanner-close {
+  padding: 7px 13px;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.scanner-status {
+  margin: 18px 0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #edf5ee;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+.scanner-status.error {
+  color: #8b392e;
+  background: #fff0ed;
+}
+#scannerDialog .scanbox {
+  padding: 16px;
+}
+.scanner-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #142b24;
+  margin-bottom: 14px;
+  aspect-ratio: 4 / 3;
+}
+.scanner-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.scanner-guide {
+  position: absolute;
+  inset: 28% 10%;
+  border: 2px solid #bcf2c9;
+  border-radius: 12px;
+  pointer-events: none;
+}
+.scanner-camera-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.scanner-footer {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+#scannerDialog #results {
+  max-height: 220px;
+  overflow-y: auto;
+}
+body.scanner-open {
+  overflow: hidden;
+}
+@media (max-width: 560px) {
+  .scanner-launch {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  #scannerDialog {
+    padding: 18px;
+  }
+  .scanner-heading h2 {
+    font-size: 17px;
+  }
+  .scanner-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .scanner-camera-actions {
+    flex-wrap: wrap;
+  }
+}
+
 @media print {
   @page {
     size: A4;
