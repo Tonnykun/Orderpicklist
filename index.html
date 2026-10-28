@@ -59,10 +59,13 @@
             </div>
           </section>
           <section class="card">
-            <h2><span class="step">02</span> เพิ่มสินค้า</h2>
+            <h2><span class="step">02</span> สแกนสินค้าเพื่อสร้างใบเบิก</h2>
             <div class="scanbox">
               <div class="scanicon" aria-hidden="true">▌▏▎▏▌▎▏▌</div>
-              <p>ถ่ายภาพบาร์โค้ดให้ชัด ระบบจะค้นหาสินค้าจากชีต</p>
+              <p>
+                สแกนบาร์โค้ดจากภาพถ่าย ระบบจะค้นหาเลขบาร์โค้ดในแท็บ “สินค้า” ของ Google
+                Sheet แล้วเพิ่มชื่อสินค้าและหน่วยนับ ลงหัวข้อ 03 รายการขอเบิกโดยอัตโนมัติ
+              </p>
               <button
                 class="primary"
                 id="cameraBtn"
@@ -86,7 +89,7 @@
                 placeholder="บาร์โค้ดสินค้า"
                 autocomplete="off"
                 onkeydown="if(event.key==='Enter'){event.preventDefault();addBarcode()}"
-              /><button onclick="addBarcode()">＋ เพิ่ม</button>
+              /><button onclick="addBarcode()">เพิ่มลงรายการขอเบิก</button>
             </div>
             <label class="space"
               >ค้นหาสินค้าในชีต<input
@@ -96,7 +99,7 @@
             /></label>
             <div id="results"></div>
           </section>
-          <section class="card">
+          <section class="card" id="requestItemsSection">
             <div class="topline">
               <h2><span class="step">03</span> รายการขอเบิก</h2>
               <span class="muted" id="listCount">0 รายการ</span>
@@ -181,7 +184,11 @@
           type="text"
           placeholder="https://docs.google.com/spreadsheets/d/.../edit" /></label
       ><label class="space"
-        >ชื่อแท็บรายการสินค้า<input id="sheetTab" value="สินค้า" placeholder="สินค้า"
+        >ชื่อแท็บรายการสินค้า<input
+          id="sheetTab"
+          value="สินค้า"
+          placeholder="สินค้า"
+          readonly
       /></label>
       <p class="note space">
         แถวแรกต้องมีหัวคอลัมน์: บาร์โค้ด | ชื่อสินค้า | หน่วยนับ<br />ตั้งคอลัมน์บาร์โค้ดเป็นข้อความเพื่อเก็บเลขศูนย์ด้านหน้า<br />ชีตนี้จะใช้ทั้งอ่านสินค้าและบันทึกใบเบิก

@@ -194,7 +194,7 @@ function openSettings() {
   if (busy || pending) return;
 
   $("sheetUrl").value = settings?.url || "";
-  $("sheetTab").value = settings?.tab || "สินค้า";
+  $("sheetTab").value = "สินค้า";
   $("endpoint").value = settings?.endpoint || "";
   $("settingsMessage").textContent = "";
   $("settingsSave").textContent = "บันทึกการตั้งค่า";
@@ -213,7 +213,8 @@ async function saveSheet() {
 
   try {
     const id = sheetId($("sheetUrl").value);
-    const tab = $("sheetTab").value.trim();
+    // ใช้แท็บ “สินค้า” เป็นแหล่งอ่านเลขบาร์โค้ดสำหรับใบเบิก
+    const tab = "สินค้า";
 
     if (!tab || ["ใบเบิก", "รายการเบิก"].includes(tab)) {
       throw new Error("ชื่อแท็บสินค้าต้องไม่ว่าง และไม่ใช้ชื่อ ใบเบิก หรือ รายการเบิก");
@@ -490,16 +491,29 @@ function removeItem(i) {
 
 function addProduct(code) {
   if (saved || busy || pending) return;
+
+  // เก็บบาร์โค้ดเป็นข้อความเสมอ เพื่อรักษาเลขศูนย์ด้านหน้า
+  code = String(code ?? "").trim();
+  if (!code) return;
+
   const p = products.find((x) => x.barcode === code);
   if (!p) {
-    notify("ไม่พบบาร์โค้ด " + code + " ในรายการสินค้า กรุณาตรวจสอบชีต", true);
+    notify(
+      "ไม่พบบาร์โค้ด " + code + " ในแท็บ สินค้า จึงยังไม่ได้เพิ่มรายการขอเบิก",
+      true,
+    );
     return;
   }
   const old = items.find((x) => x.barcode === code);
   if (old) old.qty += 1;
   else items.push({ ...p, qty: 1 });
   render();
-  notify("เพิ่ม " + p.name + " แล้ว");
+  notify("เพิ่ม " + p.name + " ลงหัวข้อ 03 รายการขอเบิกแล้ว");
+
+  $("requestItemsSection").scrollIntoView({
+    behavior: "smooth",
+    block: "nearest",
+  });
 }
 function addBarcode() {
   const code = $("barcode").value.trim();
@@ -694,6 +708,7 @@ function init() {
     if (cfg) {
       cfg.id = sheetId(cfg.id);
       cfg.endpoint = endpointUrl(cfg.endpoint);
+      cfg.tab = "สินค้า";
       settings = cfg;
     }
   } catch {
