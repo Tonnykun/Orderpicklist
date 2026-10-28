@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>เบิกดี • ใบเบิกสินค้า</title>
+    <link rel="stylesheet" href="Style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brandwrap">
+        <span class="logo">▤</span>
+        <div class="brand">เบิกดี<small>STOCK REQUISITION</small></div>
+      </div>
+      <div class="actions">
+        <button id="settingsBtn" onclick="openSettings()">⚙ ตั้งค่าชีต</button
+        ><button id="newBtn" onclick="newDoc()">＋ ใบเบิกใหม่</button>
+      </div>
+    </header>
+    <main>
+      <div class="intro">
+        <div>
+          <div class="eyebrow">WORKSPACE / REQUISITIONS</div>
+          <h1>สร้างใบเบิกสินค้า</h1>
+          <p class="muted">เลือกสินค้า ระบุจำนวน แล้วจัดทำเอกสารขอเบิกได้ในที่เดียว</p>
+        </div>
+        <span class="pill">สแกน · เพิ่มรายการ · บันทึก</span>
+      </div>
+      <div id="message" class="toast" role="status" aria-live="polite"></div>
+      <div class="grid">
+        <div>
+          <section class="card">
+            <h2><span class="step">01</span> ข้อมูลการขอเบิก</h2>
+            <div class="fields">
+              <label
+                >ผู้ขอเบิก *<input
+                  id="requester"
+                  placeholder="ชื่อ–นามสกุล"
+                  maxlength="150" /></label
+              ><label
+                >แผนก / หน่วยงาน *<input
+                  id="department"
+                  placeholder="เช่น คลังสินค้า"
+                  maxlength="150" /></label
+              ><label>วันที่ขอเบิก<input id="date" type="date" /></label
+              ><label
+                >เลขที่เอกสาร<input
+                  id="docno"
+                  value="ออกเลขเมื่อบันทึกลง Sheets"
+                  readonly /></label
+              ><label class="full"
+                >เหตุผลในการเบิก<textarea
+                  id="reason"
+                  rows="2"
+                  placeholder="ระบุวัตถุประสงค์การใช้งาน"
+                  maxlength="2000"
+                ></textarea>
+              </label>
+            </div>
+          </section>
+          <section class="card">
+            <h2><span class="step">02</span> เพิ่มสินค้า</h2>
+            <div class="scanbox">
+              <div class="scanicon" aria-hidden="true">▌▏▎▏▌▎▏▌</div>
+              <p>ถ่ายภาพบาร์โค้ดให้ชัด ระบบจะค้นหาสินค้าจากชีต</p>
+              <button
+                class="primary"
+                id="cameraBtn"
+                onclick="document.getElementById('photo').click()"
+              >
+                ▣ ถ่ายภาพสแกนบาร์โค้ด</button
+              ><input
+                type="file"
+                id="photo"
+                accept="image/*"
+                capture="environment"
+                hidden
+                style="display: none"
+                onchange="scanPhoto(this)"
+              />
+            </div>
+            <label for="barcode">หรือกรอกบาร์โค้ด / ใช้เครื่องสแกน</label>
+            <div class="entry space" style="margin-top: 8px">
+              <input
+                id="barcode"
+                placeholder="บาร์โค้ดสินค้า"
+                autocomplete="off"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();addBarcode()}"
+              /><button onclick="addBarcode()">＋ เพิ่ม</button>
+            </div>
+            <label class="space"
+              >ค้นหาสินค้าในชีต<input
+                id="search"
+                placeholder="ค้นหาจากชื่อ หรือบาร์โค้ด"
+                oninput="searchProducts()"
+            /></label>
+            <div id="results"></div>
+          </section>
+          <section class="card">
+            <div class="topline">
+              <h2><span class="step">03</span> รายการขอเบิก</h2>
+              <span class="muted" id="listCount">0 รายการ</span>
+            </div>
+            <div class="tablewrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>สินค้า / บาร์โค้ด</th>
+                    <th>จำนวน</th>
+                    <th>หน่วย</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="items"></tbody>
+              </table>
+            </div>
+            <div id="empty" class="empty">
+              ยังไม่มีรายการสินค้า<br /><small
+                >สแกนบาร์โค้ดหรือค้นหาสินค้าเพื่อเริ่มต้น</small
+              >
+            </div>
+          </section>
+        </div>
+        <aside>
+          <section class="card">
+            <h2>สรุปใบเบิก</h2>
+            <div class="summary">
+              <span class="muted">จำนวนรายการสินค้า</span
+              ><span class="big" id="total">0</span>
+            </div>
+            <p class="muted" id="saveState">ยังไม่ได้บันทึกเอกสาร</p>
+            <button id="saveBtn" class="primary asidebtn" onclick="saveDoc()">
+              บันทึกลง Sheets</button
+            ><button id="printBtn" class="asidebtn" onclick="printDoc()">
+              พิมพ์ / PDF</button
+            ><button id="retryCancel" class="asidebtn" onclick="checkSaveResult()" hidden>
+              ตรวจผลบันทึก
+            </button>
+            <p class="note space">
+              เอกสารที่บันทึกมีสถานะ “ขอเบิก” และยังไม่ตัดสต็อกสินค้า
+            </p>
+          </section>
+          <section class="card">
+            <div class="topline">
+              <h2 style="margin: 0">Google Sheets</h2>
+              <button class="textbtn" id="refreshBtn" onclick="loadProducts()">
+                ↻ โหลดใหม่
+              </button>
+            </div>
+            <p class="status" id="sheetStatus">
+              <span class="dot"></span>ยังไม่ได้ตั้งค่าชีต
+            </p>
+            <a id="sheetLink" target="_blank" rel="noopener" hidden
+              >เปิด Google Sheet ↗</a
+            >
+            <p class="muted" id="productCount">บันทึกลิงก์ชีตเพื่อโหลดสินค้า</p>
+            <button class="asidebtn" onclick="openSettings()">ตั้งค่าชีต</button>
+          </section>
+        </aside>
+      </div>
+    </main>
+    <footer>เบิกดี · จัดทำเอกสารขอเบิกสินค้า</footer>
+    <dialog id="settings">
+      <h2>ตั้งค่า Google Sheet</h2>
+      <p class="muted">
+        วางลิงก์ชีตแบบเต็มได้ ระบบจะบันทึกไว้ในเบราว์เซอร์นี้เพื่อใช้ครั้งถัดไป
+      </p>
+      <label
+        >ลิงก์ Apps Script Web app
+        <input
+          id="endpoint"
+          type="url"
+          placeholder="https://script.google.com/macros/s/.../exec"
+          autocomplete="off"
+        />
+      </label>
+      <p class="muted">วางลิงก์ Web app ที่ติดตั้งตามคู่มือครั้งแรก</p>
+      <label
+        >ลิงก์ Google Sheets หรือ Spreadsheet ID<input
+          id="sheetUrl"
+          type="text"
+          placeholder="https://docs.google.com/spreadsheets/d/.../edit" /></label
+      ><label class="space"
+        >ชื่อแท็บรายการสินค้า<input id="sheetTab" value="สินค้า" placeholder="สินค้า"
+      /></label>
+      <p class="note space">
+        แถวแรกต้องมีหัวคอลัมน์: บาร์โค้ด | ชื่อสินค้า | หน่วยนับ<br />ตั้งคอลัมน์บาร์โค้ดเป็นข้อความเพื่อเก็บเลขศูนย์ด้านหน้า<br />ชีตนี้จะใช้ทั้งอ่านสินค้าและบันทึกใบเบิก
+      </p>
+      <p id="settingsMessage" class="status" aria-live="polite"></p>
+      <div class="actions">
+        <button id="settingsClose" onclick="document.getElementById('settings').close()">
+          ปิด</button
+        ><button class="primary" id="settingsSave" onclick="saveSheet()">
+          บันทึกการตั้งค่า
+        </button>
+      </div>
+    </dialog>
+    <section id="printArea"></section>
+
+    <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+    <script src="App.js"></script>
+  </body>
+</html>
