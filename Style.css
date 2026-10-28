@@ -8,6 +8,95 @@
 * {
   box-sizing: border-box;
 }
+[hidden] {
+  display: none !important;
+}
+#welcomeDialog {
+  width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+#welcomeTitle {
+  margin-top: 12px;
+}
+#productDialog {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+#productDialogTitle {
+  margin-top: 12px;
+}
+.selected-product-name {
+  font-size: 20px;
+  font-weight: bold;
+  overflow-wrap: anywhere;
+  margin-bottom: 4px;
+}
+#selectedProductBarcode {
+  overflow-wrap: anywhere;
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+#productDialogMessage {
+  color: #8b392e;
+}
+.role-options {
+  border: 0;
+  padding: 0;
+  margin: 22px 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.role-options legend {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.role-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 12px;
+  cursor: pointer;
+}
+.role-option:has(input:checked) {
+  background: #edf5ee;
+  border-color: var(--green);
+}
+.role-option input,
+.preparation-item input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--green);
+}
+.role-option small {
+  display: block;
+  color: var(--muted);
+  margin-top: 6px;
+  font-weight: normal;
+  line-height: 1.6;
+}
+.preparation-request {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 16px;
+}
+.preparation-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  line-height: 1.7;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 400px) {
+  .role-options { grid-template-columns: 1fr; }
+}
 body {
   margin: 0;
   background: var(--bg);
@@ -89,6 +178,29 @@ header {
   display: flex;
   gap: 9px;
   flex-wrap: wrap;
+}
+.workspace-menu {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 9px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  padding: 12px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+.workspace-menu button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.workspace-menu:focus-visible {
+  outline: 2px solid #83b8a7;
+  outline-offset: 2px;
 }
 main {
   max-width: 1200px;
@@ -257,6 +369,49 @@ td input {
   width: 100%;
   margin-top: 10px;
 }
+.request-items-actions,
+.history-document-actions {
+  display: flex;
+  gap: 9px;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.request-items-actions button,
+.history-document-actions button {
+  flex: 0 1 156px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 12px 14px;
+  line-height: 1.4;
+  text-align: center;
+}
+.requisition-history {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.requisition-history h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+.history-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.history-picker label {
+  flex: 1;
+  min-width: 0;
+}
+.history-picker button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+#historySelect {
+  text-overflow: ellipsis;
+}
 .status {
   font-size: 13px;
   line-height: 1.7;
@@ -344,7 +499,7 @@ footer {
   }
   .grid aside {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 16px;
   }
   header {
@@ -374,9 +529,37 @@ footer {
   .brand {
     font-size: 21px;
   }
-  .actions button {
+  .actions button,
+  .workspace-menu button {
     font-size: 12px;
     padding: 10px;
+  }
+  .request-items-actions,
+  .history-document-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .request-items-actions button,
+  .history-document-actions button {
+    width: 100%;
+    min-height: 44px;
+    padding: 11px 8px;
+    font-size: 13px;
+  }
+  .request-items-actions #retryCancel,
+  .history-document-actions #historyRetryCancel {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+  .history-document-actions #saveEditBtn {
+    grid-column: 1 / -1;
+    order: 2;
+    min-height: 48px;
+  }
+  .history-picker {
+    flex-direction: column;
+    align-items: stretch;
   }
   .entry {
     flex-wrap: wrap;
@@ -507,7 +690,7 @@ body.scanner-open {
   body {
     background: white;
     color: #000;
-    font-size: 12pt;
+    font-size: 10pt;
   }
   body > header,
   body > main,
@@ -517,33 +700,130 @@ body.scanner-open {
   }
   #printArea {
     display: block;
+    line-height: 1.5;
+    padding: 0 0.5mm;
+  }
+  #printArea .print-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10mm;
+    padding-bottom: 5mm;
+    border-bottom: 2px solid #222;
+  }
+  #printArea .print-brand {
+    font-size: 22pt;
+    font-weight: bold;
+  }
+  #printArea .print-brand small {
+    display: block;
+    margin-top: 1mm;
+    font-size: 10pt;
+    font-weight: normal;
+  }
+  #printArea .print-document-title {
+    text-align: right;
   }
   #printArea h1 {
-    text-align: center;
-    font-size: 23pt;
+    margin: 0 0 1mm;
+    font-size: 22pt;
   }
-  #printArea table {
-    font-size: 11pt;
-    margin: 24px 0;
+  #printArea .print-document-title span {
+    font-size: 8pt;
+    letter-spacing: 1.5px;
   }
-  #printArea td,
-  #printArea th {
-    color: #000;
-    border: 1px solid #777;
-    padding: 9px;
+  #printArea .print-information {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    margin: 5mm 0;
+    border: 1px solid #444;
+    break-inside: avoid;
   }
-  #printArea .sign {
+  #printArea .print-information > div {
+    padding: 3mm;
+    min-width: 0;
+  }
+  #printArea .print-document-meta {
+    border-left: 1px solid #444;
+  }
+  #printArea .print-information p {
     display: flex;
-    justify-content: space-around;
-    margin-top: 65px;
-    gap: 15px;
+    gap: 3mm;
+    margin: 1mm 0;
+  }
+  #printArea .print-information strong {
+    flex-shrink: 0;
+  }
+  #printArea .print-information span {
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+  #printArea .print-items {
+    table-layout: fixed;
+    font-size: 10pt;
+    margin: 0;
+  }
+  #printArea .print-items thead {
+    display: table-header-group;
+  }
+  #printArea .print-items td,
+  #printArea .print-items th {
+    color: #000;
+    border: 1px solid #444;
+    padding: 2.5mm 2mm;
+    overflow-wrap: anywhere;
+    vertical-align: top;
+  }
+  #printArea .print-items th {
     text-align: center;
     font-size: 10pt;
+    font-weight: bold;
+    background: #eee;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
-  #printArea p {
+  #printArea .print-center { text-align: center; }
+  #printArea .print-quantity { text-align: right; font-variant-numeric: tabular-nums; }
+  #printArea .print-code { font-size: 9pt; }
+  #printArea .print-item-total {
+    border: 1px solid #444;
+    border-top: 0;
+    padding: 2.5mm;
+    text-align: right;
+    break-inside: avoid;
+  }
+  #printArea .print-item-total strong { margin: 0 3mm; }
+  #printArea .print-reason {
+    margin-top: 5mm;
+    padding: 3mm;
+    border: 1px solid #444;
+  }
+  #printArea .print-reason p {
+    margin: 2mm 0 0;
+    min-height: 8mm;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
-  tr {
+  #printArea .print-signatures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6mm;
+    margin-top: 9mm;
+    text-align: center;
+    font-size: 9pt;
+    break-inside: avoid;
+  }
+  #printArea .print-signatures > div {
+    border: 1px solid #444;
+    padding: 4mm 2mm;
+  }
+  #printArea .print-sign-line {
+    height: 10mm;
+    border-bottom: 1px dotted #555;
+    margin: 0 2mm 3mm;
+  }
+  #printArea .print-signatures p { margin: 2mm 0 0; }
+  #printArea .print-items tr {
     break-inside: avoid;
   }
 }

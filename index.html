@@ -3,31 +3,53 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>เบิกดี • ใบเบิกสินค้า</title>
-    <link rel="stylesheet" href="Style.css?v=scan-popup-20261028" />
+    <title>MM Bakery • ใบเบิกสินค้า</title>
+    <link rel="stylesheet" href="Style.css?v=requisition-print-20261028" />
   </head>
   <body>
     <header>
       <div class="brandwrap">
         <span class="logo">▤</span>
-        <div class="brand">เบิกดี<small>STOCK REQUISITION</small></div>
-      </div>
-      <div class="actions">
-        <button id="settingsBtn" onclick="openSettings()">⚙ ตั้งค่าชีต</button
-        ><button id="newBtn" onclick="newDoc()">＋ ใบเบิกใหม่</button>
+        <div class="brand">MM Bakery<small>STOCK REQUISITION</small></div>
       </div>
     </header>
     <main>
       <div class="intro">
         <div>
           <div class="eyebrow">WORKSPACE / REQUISITIONS</div>
-          <h1>สร้างใบเบิกสินค้า</h1>
-          <p class="muted">เลือกสินค้า ระบุจำนวน แล้วจัดทำเอกสารขอเบิกได้ในที่เดียว</p>
+          <h1 id="workspaceTitle">สร้างใบเบิกสินค้า</h1>
+          <p class="muted" id="workspaceDescription">เลือกสินค้า ระบุจำนวน แล้วจัดทำเอกสารขอเบิกได้ในที่เดียว</p>
+          <p class="muted" id="activeUser" hidden></p>
         </div>
         <span class="pill">สแกน · เพิ่มรายการ · บันทึก</span>
       </div>
+      <nav class="workspace-menu" aria-label="เมนูการใช้งาน" tabindex="0">
+        <button id="userBtn" onclick="openWelcome()">เลือกหน้าที่ / ผู้ใช้งาน</button>
+        <button id="refreshBtn" onclick="loadProducts()">↻ รีเฟรช</button>
+        <button id="settingsBtn" onclick="openSettings()">⚙ ตั้งค่าชีต</button>
+        <button id="newBtn" onclick="newDoc()">＋ ใบเบิกใหม่</button>
+      </nav>
       <div id="message" class="toast" role="status" aria-live="polite"></div>
-      <div class="grid">
+      <div id="preparationWorkspace" class="grid" hidden>
+        <section class="card">
+          <h2>สำหรับเตรียมของ</h2>
+          <p class="muted">ติ๊กรายการเมื่อเตรียมสินค้าครบตามจำนวน ระบบจะบันทึกชื่อผู้เตรียมลงชีต</p>
+          <p id="preparationCatalogStatus" class="status" role="status" aria-live="polite"></p>
+          <button id="loadPreparationBtn" onclick="loadPreparation()">↻ โหลดใบเบิกที่รอเตรียม</button>
+          <p id="preparationMessage" class="status" role="status" aria-live="polite"></p>
+          <div id="preparationRequests"></div>
+        </section>
+        <aside>
+          <section class="card">
+            <h2>สรุปใบเบิก</h2>
+            <div class="summary"><span class="muted">ใบเบิกที่รอเตรียม</span><span class="big" id="preparationDocumentTotal">0</span></div>
+            <div class="summary"><span class="muted">รายการสินค้าทั้งหมด</span><span class="big" id="preparationItemTotal">0</span></div>
+            <div class="summary"><span class="muted">รายการที่เตรียมแล้ว</span><span class="big" id="preparationDoneTotal">0</span></div>
+            <p id="preparationSummaryState" class="muted" role="status" aria-live="polite">ยังไม่ได้โหลดใบเบิก</p>
+          </section>
+        </aside>
+      </div>
+      <div id="requisitionWorkspace">
         <div>
           <section class="card">
             <h2><span class="step">01</span> ข้อมูลการขอเบิก</h2>
@@ -90,47 +112,73 @@
                 >สแกนบาร์โค้ดหรือค้นหาสินค้าเพื่อเริ่มต้น</small
               >
             </div>
-          </section>
-        </div>
-        <aside>
-          <section class="card">
-            <h2>สรุปใบเบิก</h2>
-            <div class="summary">
-              <span class="muted">จำนวนรายการสินค้า</span
-              ><span class="big" id="total">0</span>
-            </div>
             <p class="muted" id="saveState">ยังไม่ได้บันทึกเอกสาร</p>
-            <button id="saveBtn" class="primary asidebtn" onclick="saveDoc()">
-              บันทึกลง Sheets</button
-            ><button id="printBtn" class="asidebtn" onclick="printDoc()">
-              พิมพ์ / PDF</button
-            ><button id="retryCancel" class="asidebtn" onclick="checkSaveResult()" hidden>
-              ตรวจผลบันทึก
-            </button>
-            <p class="note space">
-              เอกสารที่บันทึกมีสถานะ “ขอเบิก” และยังไม่ตัดสต็อกสินค้า
-            </p>
-          </section>
-          <section class="card">
-            <div class="topline">
-              <h2 style="margin: 0">Google Sheets</h2>
-              <button class="textbtn" id="refreshBtn" onclick="loadProducts()">
-                ↻ โหลดใหม่
+            <div class="request-items-actions">
+              <button id="printBtn" onclick="printDoc()">พิมพ์ / PDF</button>
+              <button id="retryCancel" onclick="checkSaveResult()" hidden>ตรวจผลบันทึก</button>
+              <button id="saveBtn" class="primary" onclick="saveDoc()">
+                บันทึกลง Sheets
               </button>
             </div>
-            <p class="status" id="sheetStatus">
-              <span class="dot"></span>ยังไม่ได้ตั้งค่าชีต
-            </p>
-            <a id="sheetLink" target="_blank" rel="noopener" hidden
-              >เปิด Google Sheet ↗</a
-            >
-            <p class="muted" id="productCount">บันทึกลิงก์ชีตเพื่อโหลดสินค้า</p>
-            <button class="asidebtn" onclick="openSettings()">ตั้งค่าชีต</button>
+            <p class="note space">บันทึกสำเร็จแล้วรายการจะถูกล้าง ดูหรือแก้ไขใบเบิกได้จากส่วนเลือกใบเบิกที่บันทึกไว้ด้านล่าง</p>
+            <div class="requisition-history">
+              <h3>เลือกใบเบิกที่บันทึกไว้</h3>
+              <div class="fields">
+                <label>ค้นหาใบเบิก<input id="historySearch" placeholder="เลขที่ใบเบิก / ผู้ขอเบิก / แผนก" oninput="renderHistoryOptions()" /></label>
+                <label>สถานะ<select id="historyStatus" onchange="renderHistoryOptions()">
+                  <option value="all">ทุกสถานะ</option>
+                  <option value="จัดเตรียม">จัดเตรียม — แก้ไขได้</option>
+                  <option value="เตรียมส่งมอบ">เตรียมส่งมอบ — ดูรายการ</option>
+                  <option value="other">สถานะอื่น — ดูรายการ</option>
+                </select></label>
+              </div>
+              <div class="history-picker space">
+                <label>ใบเบิก<select id="historySelect" onchange="loadSelectedRequisition()"><option value="">เลือกใบเบิกเพื่อดูรายการ</option></select></label>
+                <button id="historyRefreshBtn" onclick="loadRequisitionHistory()">↻ โหลดใบเบิก</button>
+              </div>
+              <p id="historyMessage" class="status" role="status" aria-live="polite">เลือกใบเบิกเพื่อดูรายการ หรือเปิดแก้ไขเมื่อยังอยู่ในสถานะจัดเตรียม</p>
+              <div id="historyDocumentPanel" hidden>
+                <div class="topline">
+                  <h3 id="historyDocumentTitle"></h3>
+                  <span id="historyItemCount" class="muted"></span>
+                </div>
+                <div class="tablewrap">
+                  <table>
+                    <thead><tr><th>สินค้า / บาร์โค้ด</th><th>จำนวน</th><th>หน่วย</th><th></th></tr></thead>
+                    <tbody id="historyItems"></tbody>
+                  </table>
+                </div>
+                <p id="historySaveState" class="muted" role="status" aria-live="polite"></p>
+                <div class="history-document-actions">
+                  <button id="historyPrintBtn" onclick="printDoc()">พิมพ์ / PDF</button>
+                  <button id="historyRetryCancel" onclick="checkSaveResult()" hidden>ตรวจผลบันทึก</button>
+                  <button id="editBtn" onclick="editSavedDoc()" disabled>แก้ไขรายการ</button>
+                  <button id="saveEditBtn" class="primary" onclick="saveEditedDoc()" disabled>บันทึกการแก้ไข</button>
+                </div>
+                <p class="note space">แก้ไขได้เฉพาะสถานะจัดเตรียม เมื่อติ๊กเตรียมครบทุกสินค้าจะเป็น “เตรียมส่งมอบ” และล็อกการแก้ไข</p>
+              </div>
+            </div>
           </section>
-        </aside>
+        </div>
       </div>
     </main>
     <footer>เบิกดี · จัดทำเอกสารขอเบิกสินค้า</footer>
+    <dialog id="welcomeDialog" aria-labelledby="welcomeTitle">
+      <form id="welcomeForm">
+        <div class="eyebrow">ยินดีต้อนรับสู่ เบิกดี</div>
+        <h2 id="welcomeTitle">เลือกหน้าที่ของคุณ</h2>
+        <p class="muted">ระหว่างนี้ระบบจะโหลดรายการสินค้าไว้ให้เบื้องหลัง</p>
+        <fieldset class="role-options">
+          <legend>หน้าที่ในการใช้งาน</legend>
+          <label class="role-option"><input type="radio" name="userRole" value="requisition" required checked /><span>สำหรับเบิก<small>สร้างใบเบิกสินค้า</small></span></label>
+          <label class="role-option"><input type="radio" name="userRole" value="preparation" required /><span>สำหรับเตรียมของ<small>พื้นที่สำหรับผู้เตรียมสินค้า</small></span></label>
+        </fieldset>
+        <label class="space" for="userName">ชื่อผู้ใช้งาน *</label>
+        <input id="userName" name="userName" placeholder="ชื่อ–นามสกุล" maxlength="150" autocomplete="name" required />
+        <p id="welcomeCatalogStatus" class="status" role="status" aria-live="polite">กำลังโหลดรายการสินค้า…</p>
+        <div class="actions"><button class="primary" type="submit">เริ่มใช้งาน</button></div>
+      </form>
+    </dialog>
     <dialog id="scannerDialog" aria-labelledby="scannerTitle">
       <div class="scanner-heading">
         <div>
@@ -151,7 +199,7 @@
         </div>
         <div id="scannerPlaceholder" class="scanner-placeholder">
           <div class="scanicon" aria-hidden="true">▌▏▎▏▌▎▏▌</div>
-          <p>เล็งบาร์โค้ดให้ชัด ระบบจะเพิ่มสินค้าเข้าหัวข้อ 03</p>
+          <p>เล็งบาร์โค้ดให้ชัด แล้วระบุจำนวนและหน่วยก่อนเพิ่มรายการ</p>
         </div>
         <div class="scanner-camera-actions">
           <button class="primary" id="startScannerBtn" onclick="startCameraScan()">
@@ -197,10 +245,27 @@
         <button class="primary" onclick="closeScanner()">เสร็จแล้ว ดูรายการขอเบิก</button>
       </div>
     </dialog>
+    <dialog id="productDialog" aria-labelledby="productDialogTitle">
+      <form id="productForm">
+        <div class="eyebrow">รายการสินค้าที่เลือก</div>
+        <h2 id="productDialogTitle">ระบุจำนวนและหน่วยสินค้า</h2>
+        <p id="selectedProductName" class="selected-product-name"></p>
+        <p id="selectedProductBarcode" class="muted"></p>
+        <div class="fields">
+          <label>จำนวน *<input id="selectedProductQty" type="number" min="0.001" max="1000000" step="any" value="1" required /></label>
+          <label>หน่วยสินค้า *<select id="selectedProductUnit" required></select></label>
+        </div>
+        <p id="productDialogMessage" class="status" role="status" aria-live="polite"></p>
+        <div class="actions">
+          <button type="button" onclick="document.getElementById('productDialog').close()">ยกเลิก</button>
+          <button type="submit" class="primary">เพิ่มลงใบเบิก</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="settings">
       <h2>ตั้งค่า Google Sheet</h2>
       <p class="muted">
-        วางลิงก์ชีตแบบเต็มได้ ระบบจะบันทึกไว้ในเบราว์เซอร์นี้เพื่อใช้ครั้งถัดไป
+        ผู้ดูแลเปลี่ยนลิงก์ Apps Script และชีตได้ที่นี่ ทุกเครื่องที่ใช้เว็บไซต์นี้จะรับการตั้งค่าล่าสุดเมื่อโหลดหน้าเว็บใหม่
       </p>
       <label
         >ลิงก์ Apps Script Web app
@@ -211,7 +276,7 @@
           autocomplete="off"
         />
       </label>
-      <p class="muted">วางลิงก์ Web app ที่ติดตั้งตามคู่มือครั้งแรก</p>
+      <p class="muted">ลิงก์นี้ใช้โหลดสินค้าและบันทึกใบเบิก ส่วนลิงก์ศูนย์กลางอ่านจาก config.json หากใช้ลิงก์อื่นจากที่กำหนดไว้ ระบบจะให้ยืนยันปลายทางและข้อมูลก่อนส่งแต่ละครั้ง</p>
       <label
         >ลิงก์ Google Sheets หรือ Spreadsheet ID<input
           id="sheetUrl"
@@ -225,9 +290,12 @@
           readonly
       /></label>
       <p class="note space">
-        แถวแรกต้องมีหัวคอลัมน์: บาร์โค้ด | ชื่อสินค้า | หน่วยนับ<br />ตั้งคอลัมน์บาร์โค้ดเป็นข้อความเพื่อเก็บเลขศูนย์ด้านหน้า<br />ชีตนี้จะใช้ทั้งอ่านสินค้าและบันทึกใบเบิก
+        แถวแรกต้องมีหัวคอลัมน์: บาร์โค้ด | ชื่อสินค้า | หน่วยนับ<br />หลายหน่วยให้คั่นด้วยจุลภาค เช่น ชิ้น, ลัง, กระสอบ<br />สินค้าแต่ละบาร์โค้ดใช้หนึ่งแถว และตั้งบาร์โค้ดเป็นข้อความเพื่อเก็บเลขศูนย์ด้านหน้า<br />ชีตนี้จะใช้ทั้งอ่านสินค้าและบันทึกใบเบิก
       </p>
       <p id="settingsMessage" class="status" aria-live="polite"></p>
+      <label class="space" for="adminToken">รหัสผู้ดูแลการตั้งค่ากลาง</label>
+      <input id="adminToken" type="password" autocomplete="off" placeholder="รหัสที่ตั้งไว้ใน Script Properties" />
+      <p class="muted">ใช้เฉพาะตอนเปลี่ยนการตั้งค่า ไม่ต้องกรอกสำหรับเบิกหรือเตรียมของ</p>
       <div class="actions">
         <button id="settingsClose" onclick="document.getElementById('settings').close()">
           ปิด</button
@@ -238,7 +306,7 @@
     </dialog>
     <section id="printArea"></section>
 
-    <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-    <script src="App.js?v=scan-popup-20261028"></script>
+    <script async src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+    <script src="App.js?v=requisition-print-20261028"></script>
   </body>
 </html>
