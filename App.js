@@ -4,6 +4,10 @@
 const $ = (id) => document.getElementById(id);
 const STORAGE = "berkdee.bridge.v1";
 
+// จุดเชื่อมต่อกลางของเว็บไซต์ ทุกเครื่องใช้ลิงก์เดียวกัน
+const SHARED_ENDPOINT =
+  "https://script.google.com/macros/s/AKfycbyyXOPUf94XA9-5sJIRNS2u-4nWSzt9QoFUpn13if2pHDdM1wJIPubjBuSVwEg9Qsih/exec";
+
 let products = [];
 let items = [];
 let settings = null;
@@ -89,8 +93,7 @@ function readBridge(cfg, action, params = {}) {
 
     const query = {
       action,
-      sheetId: cfg.id,
-      tab: cfg.tab,
+      ...(cfg.id ? { sheetId: cfg.id, tab: cfg.tab } : {}),
       callback,
       ...params,
       timestamp: String(Date.now()),
@@ -138,6 +141,112 @@ function readBridge(cfg, action, params = {}) {
     script.src = url.href;
     document.head.append(script);
   });
+}
+
+function normalizeSharedSettings(value) {
+  if (!value) return null;
+  const id = sheetId(value.id);
+
+  return {
+    ...value,
+    id,
+    tab: "สินค้า",
+    endpoint: SHARED_ENDPOINT,
+    url: "https://docs.google.com/spreadsheets/d/" + id + "/edit",
+  };
+}
+
+async function postSharedSettings(cfg, writeId) {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 25000);
+
+  try {
+    await fetch(SHARED_ENDPOINT, {
+      method: "POST",
+      mode: "no-cors",
+      credentials: "omit",
+      signal: controller.signal,
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify({
+        action: "settings",
+        sheetId: cfg.id,
+        tab: "สินค้า",
+        writeId,
+      }),
+    });
+  } catch {
+    // อาจเขียนสำเร็จแม้ไม่ได้รับคำตอบ ให้ตรวจ revision ส่วนกลางก่อน
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+async function publishSharedSettings(cfg) {
+  const writeId = newId();
+  await postSharedSettings(cfg, writeId);
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const response = await readBridge({ endpoint: SHARED_ENDPOINT }, "settings", {
+      writeId,
+    });
+
+    if (response.writeError) throw new Error(response.writeError);
+
+    if (response.settings?.revision === writeId) {
+      return normalizeSharedSettings(response.settings);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  throw new Error(
+    "ยังยืนยันการบันทึกส่วนกลางไม่ได้ กรุณาตรวจว่าอัปเดต Code.gs และ Deploy New version แล้ว จากนั้นลองอีกครั้ง",
+  );
+}
+
+async function syncSharedSettings() {
+  if (busy || pending || saved) return;
+  busy = true;
+  state();
+
+  try {
+    const response = await readBridge({ endpoint: SHARED_ENDPOINT }, "settings");
+    const shared = normalizeSharedSettings(response.settings);
+
+    if (!shared) {
+      notify(
+        "ยังไม่มีการตั้งค่าส่วนกลาง ให้เครื่องเดิมกด ตั้งค่าชีต แล้วบันทึกการตั้งค่าอีกครั้งหนึ่ง",
+      );
+      return;
+    }
+
+    // ไม่สลับฐานข้อมูลของใบเบิกที่กำลังกรอกอยู่
+    if (items.length && settings?.id !== shared.id) {
+      notify(
+        "ส่วนกลางเปลี่ยนชีตแล้ว ใบเบิกปัจจุบันยังใช้ชีตเดิม เปิดใบเบิกใหม่เพื่อโหลดค่าล่าสุด",
+      );
+      return;
+    }
+
+    settings = shared;
+    try {
+      writeLocal(STORAGE, shared);
+    } catch {
+      /* ส่วนกลางยังใช้งานได้แม้ cache ไม่พร้อม */
+    }
+    const catalog = await readBridge(shared, "catalog");
+    products = catalog.products;
+    catalogLoaded = true;
+    notify("เชื่อมฐานข้อมูลส่วนกลางแล้ว: " + shared.name);
+  } catch (error) {
+    products = [];
+    catalogLoaded = false;
+    notify("โหลดการตั้งค่าส่วนกลางไม่สำเร็จ: " + error.message, true);
+  } finally {
+    busy = false;
+    updateSheet();
+    render();
+  }
 }
 
 function state() {
@@ -195,7 +304,8 @@ function openSettings() {
 
   $("sheetUrl").value = settings?.url || "";
   $("sheetTab").value = "สินค้า";
-  $("endpoint").value = settings?.endpoint || "";
+  $("endpoint").value = SHARED_ENDPOINT;
+  $("endpoint").readOnly = true;
   $("settingsMessage").textContent = "";
   $("settingsSave").textContent = "บันทึกการตั้งค่า";
   $("settings").showModal();
@@ -223,7 +333,7 @@ async function saveSheet() {
     cfg = {
       id,
       tab,
-      endpoint: endpointUrl($("endpoint").value),
+      endpoint: SHARED_ENDPOINT,
       url: "https://docs.google.com/spreadsheets/d/" + id + "/edit",
     };
   } catch (error) {
@@ -241,8 +351,14 @@ async function saveSheet() {
     const result = await readBridge(cfg, "catalog");
     cfg.name = result.name;
 
-    // บันทึกเฉพาะค่าที่ตรวจเชื่อมต่อสำเร็จ ไม่เขียนทับค่าดีเดิมเมื่อเกิดข้อผิดพลาด
-    writeLocal(STORAGE, cfg);
+    // ยืนยันว่าค่าถูกเก็บที่ส่วนกลางจริงก่อนแจ้งว่าบันทึกแล้ว
+    const shared = await publishSharedSettings(cfg);
+    cfg = shared;
+    try {
+      writeLocal(STORAGE, cfg);
+    } catch {
+      // ค่ากลางบันทึกสำเร็จแล้ว ใช้ต่อได้แม้เบราว์เซอร์ไม่อนุญาต cache
+    }
     settings = cfg;
     products = result.products;
     catalogLoaded = true;
@@ -255,9 +371,13 @@ async function saveSheet() {
     $("results").replaceChildren();
     $("settingsSave").textContent = "บันทึกแล้ว ✓";
     $("settingsMessage").textContent =
-      "บันทึกแล้ว ✓ โหลดสินค้า " + products.length + " รายการ";
+      "บันทึกส่วนกลางแล้ว ✓ ทุกเครื่องจะใช้ชีตนี้ โหลดสินค้า " +
+      products.length +
+      " รายการ";
     updateSheet();
-    notify("บันทึกลิงก์ Google Sheet แล้ว ใช้เป็นฐานข้อมูลสินค้าและใบเบิกได้");
+    notify(
+      "บันทึกลิงก์ชีตไว้ส่วนกลางแล้ว เครื่องอื่นเปิดหรือโหลดหน้าเว็บใหม่เพื่อใช้ชีตเดียวกันได้",
+    );
   } catch (error) {
     $("settingsMessage").textContent = error.message;
   } finally {
@@ -270,6 +390,10 @@ async function saveSheet() {
 
 async function loadProducts() {
   if (busy || saved || pending) return;
+  if (!items.length) {
+    await syncSharedSettings();
+    return;
+  }
   if (!settings) {
     openSettings();
     return;
@@ -692,9 +816,10 @@ function newDoc() {
   $("search").value = "";
   $("message").style.display = "none";
   render();
+  syncSharedSettings();
 }
 
-function init() {
+async function init() {
   $("date").value = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Bangkok",
     year: "numeric",
@@ -707,7 +832,7 @@ function init() {
   try {
     if (cfg) {
       cfg.id = sheetId(cfg.id);
-      cfg.endpoint = endpointUrl(cfg.endpoint);
+      cfg.endpoint = SHARED_ENDPOINT;
       cfg.tab = "สินค้า";
       settings = cfg;
     }
@@ -738,8 +863,10 @@ function init() {
   render();
   updateSheet();
 
-  // ใช้งานครั้งถัดไปโหลดสินค้าจากลิงก์ที่จำไว้ได้ทันที
-  if (settings && !pending) loadProducts();
+  // เครื่องใหม่ไม่มี localStorage ก็อ่านค่าจากจุดเชื่อมต่อกลางได้
+  $("endpoint").value = SHARED_ENDPOINT;
+  $("endpoint").readOnly = true;
+  if (!pending) await syncSharedSettings();
 }
 
 init();
