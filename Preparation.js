@@ -60,8 +60,9 @@ function markScannedPreparationItem(itemId) {
   changePreparationItem(request, item, { checked: true });
   renderPreparation();
   $("preparationScanMatches").replaceChildren();
-  scannerMessage((alreadyChecked ? "รายการนี้ติ๊กไว้แล้ว: " : "สินค้าถูกต้อง ติ๊กแล้ว: ") + item.name + " · " + item.qty + " " + item.unit + " · กดอัปเดตสถานะเมื่อเตรียมเสร็จ");
-  updatePreparationScanCount(request);
+  const message = (alreadyChecked ? "รายการนี้ติ๊กไว้แล้ว: " : "สินค้าถูกต้อง ติ๊กแล้ว: ") + item.name + " · " + item.qty + " " + item.unit + " · กดอัปเดตสถานะเมื่อเตรียมเสร็จ";
+  closeScanner();
+  $("preparationDialogMessage").textContent = message;
 }
 
 function checkPreparationBarcode(code) {

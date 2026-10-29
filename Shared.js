@@ -146,6 +146,9 @@ function notify(text, error = false) {
   close.onclick = dismissNotification;
   toast.append(close);
   toast.style.display = "block";
+  toast.style.animation = "none";
+  void toast.offsetWidth;
+  toast.style.animation = "";
   notificationTimer = setTimeout(dismissNotification, error ? 10000 : 5000);
   notificationTimer?.unref?.();
   if ($("scannerDialog")?.open) scannerMessage(text, error);
