@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <title>MM Bakery • ใบเบิกสินค้า</title>
-    <link rel="stylesheet" href="Style.css?v=invoice-table-20261028" />
+    <link rel="stylesheet" href="Style.css?v=history-compact-labels-20261029" />
   </head>
   <body>
     <header>
@@ -21,23 +21,29 @@
           <p class="muted" id="workspaceDescription">เลือกสินค้า ระบุจำนวน แล้วจัดทำเอกสารขอเบิกได้ในที่เดียว</p>
           <p class="muted" id="activeUser" hidden></p>
         </div>
-        <span class="pill">สแกน · เพิ่มรายการ · บันทึก</span>
       </div>
-      <nav class="workspace-menu" aria-label="เมนูการใช้งาน" tabindex="0">
+      <nav class="workspace-menu" aria-label="เมนูการใช้งาน">
+        <details class="workspace-dropdown" id="workspaceMenu">
+          <summary><span aria-hidden="true">☰</span> เมนูการใช้งาน</summary>
+          <div class="workspace-menu-panel" onclick="if (event.target.closest('button:not(:disabled)')) this.closest('details').open = false;">
         <button id="userBtn" onclick="openWelcome()">เลือกหน้าที่ / ผู้ใช้งาน</button>
         <button id="refreshBtn" onclick="loadProducts()">↻ รีเฟรช</button>
         <button id="settingsBtn" onclick="openSettings()">⚙ ตั้งค่าชีต</button>
-        <button id="newBtn" onclick="newDoc()">＋ ใบเบิกใหม่</button>
+          </div>
+        </details>
       </nav>
       <div id="message" class="toast" role="status" aria-live="polite"></div>
       <div id="preparationWorkspace" class="grid" hidden>
         <section class="card">
-          <h2>สำหรับเตรียมของ</h2>
-          <p class="muted">ติ๊กรายการเมื่อเตรียมสินค้าครบตามจำนวน ระบบจะบันทึกชื่อผู้เตรียมลงชีต</p>
+          <div class="preparation-heading">
+            <h2>สำหรับเตรียมของ</h2>
+            <button id="loadPreparationBtn" onclick="loadPreparation(true)">↻ โหลดใบเบิกที่รอเตรียม</button>
+          </div>
+          <p class="muted">เลือกใบเบิก ติ๊กสินค้าที่เตรียมแล้ว จากนั้นกดอัปเดตเพื่อเตรียมส่งมอบได้ทันที แม้สินค้าบางรายการจะไม่พร้อม</p>
           <p id="preparationCatalogStatus" class="status" role="status" aria-live="polite"></p>
-          <button id="loadPreparationBtn" onclick="loadPreparation()">↻ โหลดใบเบิกที่รอเตรียม</button>
+          <label>เลือกใบเบิก<select id="preparationSelect" onchange="selectPreparation()"><option value="">เลือกใบเบิกเพื่อแสดงรายการ</option></select></label>
+
           <p id="preparationMessage" class="status" role="status" aria-live="polite"></p>
-          <div id="preparationRequests"></div>
         </section>
         <aside>
           <section class="card">
@@ -52,7 +58,10 @@
       <div id="requisitionWorkspace">
         <div>
           <section class="card">
-            <h2><span class="step">01</span> ข้อมูลการขอเบิก</h2>
+            <div class="request-info-heading">
+              <h2>ข้อมูลการขอเบิก</h2>
+              <button id="newBtn" onclick="newDoc()">＋ ใบเบิกใหม่</button>
+            </div>
             <div class="fields">
               <label
                 >ผู้ขอเบิก *<input
@@ -68,7 +77,7 @@
               <label
                 >เลขที่เอกสาร<input
                   id="docno"
-                  value="ออกเลขเมื่อบันทึกลง Sheets"
+                  value="กดใบเบิกใหม่เพื่อรับเลขเอกสาร"
                   readonly /></label
               ><label class="full"
                 >เหตุผลในการเบิก<textarea
@@ -81,9 +90,9 @@
             </div>
           </section>
           <section class="card">
-            <h2><span class="step">02</span> สแกนสินค้าเพื่อสร้างใบเบิก</h2>
+            <h2>สแกนสินค้าเพื่อสร้างใบเบิก</h2>
             <div class="scanner-launch">
-              <p class="muted">เปิดหน้าสแกนเพื่อเพิ่มสินค้าลงรายการขอเบิก</p>
+              <p class="muted" id="scannerLaunchHint" role="status" aria-live="polite">กด “ใบเบิกใหม่” เพื่อรับเลขที่เอกสารก่อนเพิ่มสินค้า</p>
               <button class="primary" id="openScannerBtn" onclick="openScanner()">
                 ▣ เปิดสแกนสินค้า
               </button>
@@ -91,11 +100,11 @@
           </section>
           <section class="card" id="requestItemsSection">
             <div class="topline">
-              <h2><span class="step">03</span> รายการขอเบิก</h2>
+              <h2>รายการขอเบิก</h2>
               <span class="muted" id="listCount">0 รายการ</span>
             </div>
             <div class="tablewrap">
-              <table>
+              <table class="request-items-table">
                 <thead>
                   <tr>
                     <th>สินค้า / บาร์โค้ด</th>
@@ -114,20 +123,21 @@
             </div>
             <p class="muted" id="saveState">ยังไม่ได้บันทึกเอกสาร</p>
             <div class="request-items-actions">
-              <button id="printBtn" onclick="printDoc()">พิมพ์ / PDF</button>
               <button id="retryCancel" onclick="checkSaveResult()" hidden>ตรวจผลบันทึก</button>
               <button id="saveBtn" class="primary" onclick="saveDoc()">
                 บันทึกลง Sheets
               </button>
             </div>
-            <p class="note space">บันทึกสำเร็จแล้วรายการจะถูกล้าง ดูหรือแก้ไขใบเบิกได้จากส่วนเลือกใบเบิกที่บันทึกไว้ด้านล่าง</p>
-            <div class="requisition-history">
-              <h3>เลือกใบเบิกที่บันทึกไว้</h3>
+            <p class="note space">บันทึกสำเร็จแล้วรายการจะถูกล้าง ดูหรือแก้ไขใบเบิกได้จากกล่องดูใบเบิกย้อนหลังด้านล่าง</p>
+          </section>
+          <section class="card requisition-history" id="requisitionHistorySection" aria-labelledby="requisitionHistoryTitle">
+              <h2 id="requisitionHistoryTitle">ดูใบเบิกย้อนหลัง</h2>
               <div class="fields">
                 <label>ค้นหาใบเบิก<input id="historySearch" placeholder="เลขที่ใบเบิก / ผู้ขอเบิก / แผนก" oninput="renderHistoryOptions()" /></label>
                 <label>สถานะ<select id="historyStatus" onchange="renderHistoryOptions()">
                   <option value="all">ทุกสถานะ</option>
-                  <option value="จัดเตรียม">จัดเตรียม — แก้ไขได้</option>
+                  <option value="ขอเบิก">ขอเบิก — แก้ไขได้</option>
+                  <option value="กำลังจัดเตรียม">กำลังจัดเตรียม — แก้ไขได้</option>
                   <option value="เตรียมส่งมอบ">เตรียมส่งมอบ — ดูรายการ</option>
                   <option value="other">สถานะอื่น — ดูรายการ</option>
                 </select></label>
@@ -136,14 +146,51 @@
                 <label>ใบเบิก<select id="historySelect" onchange="loadSelectedRequisition()"><option value="">เลือกใบเบิกเพื่อดูรายการ</option></select></label>
                 <button id="historyRefreshBtn" onclick="loadRequisitionHistory()">↻ โหลดใบเบิก</button>
               </div>
-              <p id="historyMessage" class="status" role="status" aria-live="polite">เลือกใบเบิกเพื่อดูรายการ หรือเปิดแก้ไขเมื่อยังอยู่ในสถานะจัดเตรียม</p>
+              <p id="historyMessage" class="status" role="status" aria-live="polite">เลือกใบเบิกเพื่อดูรายการ หรือเปิดแก้ไขเมื่อยังอยู่ในสถานะขอเบิกหรือกำลังจัดเตรียม</p>
+          </section>
+        </div>
+      </div>
+    </main>
+    <footer>เบิกดี · จัดทำเอกสารขอเบิกสินค้า</footer>
+    <dialog id="preparationDialog" aria-labelledby="preparationDialogTitle">
+      <div class="preparation-dialog-heading">
+        <h2 id="preparationDialogTitle">เตรียมสินค้าตามใบเบิก</h2>
+        <button id="preparationCloseBtn" type="button" onclick="closePreparationDialog()" aria-label="ปิดใบเบิกที่จัดเตรียม" title="ปิด">×</button>
+      </div>
+      <p id="preparationDialogMessage" class="status" role="status" aria-live="polite"></p>
+      <div id="preparationRequests"></div>
+      <div class="preparation-update-actions">
+        <p id="preparationSaveHint" class="muted" role="status" aria-live="polite">เลือกใบเบิก แล้วติ๊กรายการที่เตรียมเสร็จและกดอัปเดตสถานะ</p>
+        <div class="preparation-buttons">
+          <button id="preparationScanBtn" onclick="openPreparationScanner()" disabled>▣ สแกนตรวจสอบสินค้า</button>
+          <button id="preparationPrintBtn" onclick="printPreparationDocument()" disabled>พิมพ์ / PDF</button>
+          <button id="updatePreparationBtn" class="primary" onclick="updatePreparationStatus()" disabled>อัปเดตสถานะ</button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="historyDialog" aria-labelledby="historyDocumentTitle">
+      <div class="history-dialog-heading">
+        <span class="eyebrow">รายละเอียดใบเบิกย้อนหลัง</span>
+        <button id="historyCloseBtn" type="button" onclick="closeHistoryDocument()" aria-label="ปิดใบเบิกย้อนหลัง">✕ ปิด</button>
+      </div>
               <div id="historyDocumentPanel" hidden>
                 <div class="topline">
                   <h3 id="historyDocumentTitle"></h3>
                   <span id="historyItemCount" class="muted"></span>
                 </div>
+<div class="fields history-metadata">
+          <label>ผู้ขอเบิก<input id="historyRequester" maxlength="150" oninput="document.getElementById('requester').value = this.value" disabled /></label>
+          <label>แผนก / หน่วยงาน<input id="historyDepartment" maxlength="150" oninput="document.getElementById('department').value = this.value" disabled /></label>
+          <label>วันที่ขอเบิก<input id="historyDate" type="date" oninput="document.getElementById('date').value = this.value" disabled /></label>
+          <label>เหตุผลในการเบิก<textarea id="historyReason" rows="2" maxlength="2000" oninput="document.getElementById('reason').value = this.value" disabled></textarea></label>
+        </div>
+        <p id="historyDialogMessage" class="status" role="status" aria-live="polite"></p>
+                <div class="history-items-toolbar">
+                  <strong>รายการสินค้า</strong>
+                  <button id="historyAddBtn" class="primary" type="button" onclick="openHistoryScanner()" hidden>＋ เพิ่มรายการ</button>
+                </div>
                 <div class="tablewrap">
-                  <table>
+                  <table class="request-items-table">
                     <thead><tr><th>สินค้า / บาร์โค้ด</th><th>จำนวน</th><th>หน่วย</th><th></th></tr></thead>
                     <tbody id="historyItems"></tbody>
                   </table>
@@ -155,14 +202,9 @@
                   <button id="editBtn" onclick="editSavedDoc()" disabled>แก้ไขรายการ</button>
                   <button id="saveEditBtn" class="primary" onclick="saveEditedDoc()" disabled>บันทึกการแก้ไข</button>
                 </div>
-                <p class="note space">แก้ไขได้เฉพาะสถานะจัดเตรียม เมื่อติ๊กเตรียมครบทุกสินค้าจะเป็น “เตรียมส่งมอบ” และล็อกการแก้ไข</p>
+                <p class="note space">แก้ไขได้ในสถานะขอเบิกและกำลังจัดเตรียม เมื่อผู้เตรียมกดอัปเดตจะเป็น “เตรียมส่งมอบ” และล็อกการแก้ไข แม้เตรียมสินค้าไม่ครบ</p>
               </div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </main>
-    <footer>เบิกดี · จัดทำเอกสารขอเบิกสินค้า</footer>
+    </dialog>
     <dialog id="welcomeDialog" aria-labelledby="welcomeTitle">
       <form id="welcomeForm">
         <div class="eyebrow">ยินดีต้อนรับสู่ เบิกดี</div>
@@ -175,6 +217,7 @@
         </fieldset>
         <label class="space" for="userName">ชื่อผู้ใช้งาน *</label>
         <input id="userName" name="userName" placeholder="ชื่อ–นามสกุล" maxlength="150" autocomplete="name" required />
+        <p id="welcomeHistoryStatus" class="status" role="status" aria-live="polite">กำลังเตรียมโหลดใบเบิกเบื้องหลัง…</p>
         <p id="welcomeCatalogStatus" class="status" role="status" aria-live="polite">กำลังโหลดรายการสินค้า…</p>
         <div class="actions"><button class="primary" type="submit">เริ่มใช้งาน</button></div>
       </form>
@@ -199,7 +242,7 @@
         </div>
         <div id="scannerPlaceholder" class="scanner-placeholder">
           <div class="scanicon" aria-hidden="true">▌▏▎▏▌▎▏▌</div>
-          <p>เล็งบาร์โค้ดให้ชัด แล้วระบุจำนวนและหน่วยก่อนเพิ่มรายการ</p>
+          <p id="scannerCameraHint">เล็งบาร์โค้ดให้ชัด แล้วระบุจำนวนและหน่วยก่อนเพิ่มรายการ</p>
         </div>
         <div class="scanner-camera-actions">
           <button class="primary" id="startScannerBtn" onclick="startCameraScan()">
@@ -215,19 +258,20 @@
           placeholder="บาร์โค้ดสินค้า"
           autocomplete="off"
           onkeydown="if(event.key==='Enter'){event.preventDefault();addBarcode()}"
-        /><button onclick="addBarcode()">เพิ่มลงรายการขอเบิก</button>
+        /><button id="scannerBarcodeBtn" onclick="addBarcode()">เพิ่มลงรายการขอเบิก</button>
       </div>
-      <label class="space"
+      <label class="space" id="scannerSearchField"
         >ค้นหาสินค้าในชีต<input
           id="search"
           placeholder="ค้นหาจากชื่อ หรือบาร์โค้ด"
           oninput="searchProducts()"
       /></label>
       <div id="results"></div>
+      <div id="preparationScanMatches" aria-live="polite"></div>
 
       <div class="scanner-footer">
         <span id="scannerCount" class="muted">0 รายการในใบเบิก</span>
-        <button class="primary" onclick="closeScanner()">เสร็จแล้ว ดูรายการขอเบิก</button>
+        <button id="scannerDoneBtn" class="primary" onclick="closeScanner()">เสร็จแล้ว ดูรายการขอเบิก</button>
       </div>
     </dialog>
     <dialog id="productDialog" aria-labelledby="productDialogTitle">
@@ -299,6 +343,9 @@
     <section id="printArea"></section>
 
     <script async src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-    <script src="App.js?v=invoice-table-20261028"></script>
+    <script src="Shared.js?v=split-workflows-20261029"></script>
+    <script src="Requisition.js?v=history-compact-labels-20261029"></script>
+    <script src="Preparation.js?v=split-workflows-20261029"></script>
+    <script src="App.js?v=split-workflows-20261029"></script>
   </body>
 </html>
