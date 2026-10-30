@@ -48,6 +48,9 @@ function enterWorkspace(event) {
 }
 
 async function init() {
+  initNotificationLayer();
+  // ผูกกับฟังก์ชันปัจจุบันโดยตรง แม้ HTML ที่เบราว์เซอร์แคชไว้มี handler รุ่นเก่า
+  $("saveEditBtn").onclick = saveEditedDoc;
   $("preparationDialog").addEventListener("cancel", (event) => {
     event.preventDefault();
     closePreparationDialog();
@@ -106,9 +109,9 @@ async function init() {
     items = queued.items;
     requestId = queued.requestId;
     if (queued.operation !== "update") {
-      reservedNumber = /^REQ-\d{9,}$/.test(queued.number || "") ? queued.number : "";
-      reservationSource = queued.sheet;
-      if (reservedNumber) $("docno").value = reservedNumber;
+      draftNumber = /^REQ-\d{9,}$/.test(queued.number || "") ? queued.number : "";
+      draftSource = queued.sheet;
+      if (draftNumber) $("docno").value = draftNumber;
     }
     editing = queued.operation === "update";
     displayedHistoryId = editing ? queued.requestId : "";
@@ -152,19 +155,31 @@ async function init() {
       pendingPreparation = queuedPreparation;
       settings = queuedPreparation.sheet;
       preparationSelectedId = queuedPreparation.body.requestId;
-      for (const change of queuedPreparation.body.changes) preparationChanges.set(preparationChangeKey(preparationSelectedId, change.itemId), change.prepared);
+      for (const change of queuedPreparation.body.changes) {
+        const key = preparationChangeKey(preparationSelectedId, change.itemId);
+        preparationChanges.set(key, change.prepared);
+        if (change.preparedQty !== undefined) preparationAmounts.set(key, { qty: change.preparedQty, unit: change.preparedUnit, completion: change.completion, note: change.preparerNote || "" });
+      }
       $("welcomeCatalogStatus").textContent = "มีสถานะเตรียมของรอยืนยัน กรุณาเลือกสำหรับเตรียมของ";
     } catch { localStorage.removeItem(STORAGE + ".preparation"); }
   }
-  const draftReservation = !pending && !pendingPreparation && readLocal(STORAGE + ".reservation", null);
-  if (draftReservation?.requestId && draftReservation.sheet) {
+  // ย้ายร่างจากคีย์ของเวอร์ชันเดิม โดยยังใช้เอกสารแถวเดิมในชีต
+  const savedDraft = !pending && !pendingPreparation && (readLocal(STORAGE + ".draft", null) || readLocal(STORAGE + ".reservation", null));
+  if (savedDraft?.requestId && savedDraft.sheet) {
     try {
-      const source = { ...draftReservation.sheet, id: sheetId(draftReservation.sheet.id), endpoint: endpointUrl(draftReservation.sheet.endpoint) };
-      if (!/^[a-f0-9-]{36}$/.test(draftReservation.requestId)) throw new Error("รหัสร่างไม่ถูกต้อง");
-      reservationSource = source;
+      const source = { ...savedDraft.sheet, id: sheetId(savedDraft.sheet.id), endpoint: endpointUrl(savedDraft.sheet.endpoint) };
+      if (!/^[a-f0-9-]{36}$/.test(savedDraft.requestId)) throw new Error("รหัสร่างไม่ถูกต้อง");
+      draftSource = source;
       settings = source;
-      requestId = draftReservation.requestId;
-    } catch { localStorage.removeItem(STORAGE + ".reservation"); }
+      requestId = savedDraft.requestId;
+      try {
+        writeLocal(STORAGE + ".draft", { requestId, sheet: source });
+        localStorage.removeItem(STORAGE + ".reservation");
+      } catch { /* ร่างที่ตรวจสอบแล้วใช้งานต่อในหน่วยความจำได้ */ }
+    } catch {
+      localStorage.removeItem(STORAGE + ".draft");
+      localStorage.removeItem(STORAGE + ".reservation");
+    }
   }
   render();
 
@@ -174,15 +189,15 @@ async function init() {
   else if (!pending) await syncSharedSettings();
   else setCatalogStatus("มีใบเบิกรอยืนยันผล กรุณาเลือกสำหรับเบิกเพื่อตรวจผลบันทึก");
   if (pending?.operation === "update" && !$("historyDialog").open) $("historyDialog").showModal();
-  if (!pending && reservationSource) {
+  if (!pending && draftSource) {
     busy = true;
     state();
     try {
-      const result = await readBridge(reservationSource, "reservation", { requestId });
+      const result = await readBridge(draftSource, "draftStatus", { requestId });
       if (result.status === "saved") resetDraft();
-      else if (result.status === "reserved") {
-        reservedNumber = result.number;
-        $("docno").value = reservedNumber;
+      else if (result.status === "draft") {
+        draftNumber = result.number;
+        $("docno").value = draftNumber;
       }
     } catch { notify("ยังตรวจเลขเอกสารเดิมไม่ได้ กดใบเบิกใหม่เพื่อลองอีกครั้ง", true); }
     finally { busy = false; render(); }

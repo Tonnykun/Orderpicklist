@@ -10,6 +10,62 @@ let preparationRequests = [];
 let preparationSelectedId = "";
 
 let preparationChanges = new Map();
+let preparationAmounts = new Map();
+
+function preparationItemAmount(request, item) {
+  return { note: item.preparerNote || '', ...(preparationAmounts.get(preparationChangeKey(request.requestId, item.itemId)) || {
+    qty: Number(item.preparedQty ?? (item.prepared ? item.qty : 0)),
+    unit: item.preparedUnit || item.unit,
+    completion: item.completion || (item.prepared ? "full" : "none"),
+  }) };
+}
+
+function storePreparationAmount(request, item, amount) {
+  const key = preparationChangeKey(request.requestId, item.itemId);
+  const baseline = { qty: Number(item.preparedQty ?? (item.prepared ? item.qty : 0)), unit: item.preparedUnit || item.unit,
+    completion: item.completion || (item.prepared ? "full" : "none"), note: item.preparerNote || "" };
+  if (amount.qty === baseline.qty && amount.unit === baseline.unit && amount.completion === baseline.completion && (amount.note || "") === baseline.note) {
+    preparationAmounts.delete(key);
+    preparationChanges.delete(key);
+  } else {
+    preparationAmounts.set(key, amount);
+    preparationChanges.set(key, amount.completion === "full");
+  }
+  updatePreparationControls();
+}
+
+function changePreparationAmount(index, qty, unit) {
+  const request = currentPreparationDocument();
+  const item = request?.items[index];
+  if (!item || preparationBusy || pendingPreparation || activeUser?.role !== "preparation" || !editableDocumentStatus(request.status)) return;
+  const previous = preparationItemAmount(request, item);
+  const amount = { ...previous, qty: qty === null ? previous.qty : qty === "" ? NaN : Number(qty), unit: unit === null ? previous.unit : unit, completion: "partial" };
+  storePreparationAmount(request, item, amount);
+  $("preparedFull" + index).setAttribute("aria-pressed", "false");
+  $("preparedPartial" + index).setAttribute("aria-pressed", "true");
+  $("preparedOut" + index).setAttribute("aria-pressed", "false");
+  $("preparedResult" + index).textContent = "ได้บางส่วน";
+}
+
+function setPreparationCompletion(index, completion) {
+  const request = currentPreparationDocument();
+  const item = request?.items[index];
+  if (!item || !["full", "partial", "out"].includes(completion) || preparationBusy || pendingPreparation || activeUser?.role !== "preparation" || !editableDocumentStatus(request.status)) return;
+  const previous = preparationItemAmount(request, item);
+  const amount = completion === "full" ? { qty: Number(item.qty), unit: item.unit, completion: "full" }
+    : completion === "out" ? { qty: 0, unit: previous.unit, completion: "out" }
+    : { qty: previous.completion === "full" ? 0 : previous.qty, unit: previous.unit, completion: "partial" };
+  storePreparationAmount(request, item, { ...amount, note: previous.note });
+  renderPreparation();
+}
+
+function changePreparationNote(index, note) {
+  const request = currentPreparationDocument();
+  const item = request?.items[index];
+  if (!item || preparationBusy || pendingPreparation || activeUser?.role !== "preparation" || !editableDocumentStatus(request.status)) return;
+  if (note.length > 500) return;
+  storePreparationAmount(request, item, { ...preparationItemAmount(request, item), note });
+}
 
 let pendingPreparation = null;
 
@@ -29,7 +85,7 @@ function preparationScanRequest() {
 
 function updatePreparationScanCount(request) {
   const selected = request.items.filter((item) => preparationChanges.get(preparationChangeKey(request.requestId, item.itemId)) ?? item.prepared === true).length;
-  $("scannerCount").textContent = `เลือกเตรียมแล้ว ${selected}/${request.items.length} รายการ`;
+  $("scannerCount").textContent = `เลือกครบแล้ว ${selected}/${request.items.length} รายการ`;
 }
 
 function openPreparationScanner() {
@@ -39,7 +95,7 @@ function openPreparationScanner() {
   if (!request) return;
   scannerMode = "preparation";
   $("scannerTitle").textContent = "ตรวจสอบสินค้าในใบเบิก " + request.number;
-  $("scannerCameraHint").textContent = "สแกนสินค้าที่ต้องการตรวจสอบ หากตรงกับใบเบิก ระบบจะติ๊ก Checkbox ให้";
+  $("scannerCameraHint").textContent = "สแกนสินค้าที่ต้องการตรวจสอบ หากตรงกับใบเบิก ระบบจะเลือกครบและใส่จำนวนที่จัดได้ให้";
   $("scannerBarcodeBtn").textContent = "ตรวจสอบสินค้า";
   $("scannerSearchField").hidden = true;
   $("results").replaceChildren();
@@ -60,7 +116,7 @@ function markScannedPreparationItem(itemId) {
   changePreparationItem(request, item, { checked: true });
   renderPreparation();
   $("preparationScanMatches").replaceChildren();
-  const message = (alreadyChecked ? "รายการนี้ติ๊กไว้แล้ว: " : "สินค้าถูกต้อง ติ๊กแล้ว: ") + item.name + " · " + item.qty + " " + item.unit + " · กดอัปเดตสถานะเมื่อเตรียมเสร็จ";
+  const message = (alreadyChecked ? "รายการนี้เลือกครบไว้แล้ว: " : "สินค้าถูกต้อง เลือกครบแล้ว: ") + item.name + " · " + item.qty + " " + item.unit + " · กดอัปเดตสถานะเมื่อเตรียมเสร็จ";
   closeScanner();
   $("preparationDialogMessage").textContent = message;
 }
@@ -72,7 +128,7 @@ function checkPreparationBarcode(code) {
   stopCameraScan();
   $("preparationScanMatches").replaceChildren();
   const matches = request.items.filter((item) => String(item.barcode) === String(code ?? "").trim());
-  if (!matches.length) { scannerMessage("สินค้าบาร์โค้ดนี้ไม่มีในใบเบิก " + request.number + " · ยังไม่ได้ติ๊กรายการใด", true); return; }
+  if (!matches.length) { scannerMessage("สินค้าบาร์โค้ดนี้ไม่มีในใบเบิก " + request.number + " · ยังไม่ได้เลือกรายการใด", true); return; }
   if (matches.length === 1) { markScannedPreparationItem(matches[0].itemId); return; }
   scannerMessage("พบสินค้าบาร์โค้ดเดียวกันหลายหน่วย กรุณาเลือกรายการที่กำลังเตรียม");
   for (const item of matches) {
@@ -91,7 +147,7 @@ function updatePreparationControls() {
   const locked = preparationBusy || !!pendingPreparation;
   const request = currentPreparationDocument();
   const ready = request && !editableDocumentStatus(request.status);
-  $("preparationRequests").querySelectorAll("input").forEach((input) => { input.disabled = locked || ready; });
+  $("preparationRequests").querySelectorAll("input, textarea, select, button").forEach((input) => { input.disabled = locked || ready; });
   $("preparationSelect").disabled = locked;
   $("preparationCloseBtn").disabled = locked;
   $("preparationScanBtn").disabled = locked || ready || !request;
@@ -104,8 +160,8 @@ function updatePreparationControls() {
   const count = request ? request.items.filter((item) => preparationChanges.has(preparationChangeKey(request.requestId, item.itemId))).length : 0;
   $("preparationSaveHint").textContent = pendingPreparation ? "มีการอัปเดตรอยืนยันผล กรุณาตรวจผลหรือส่งชุดเดิมซ้ำ"
     : ready ? "อัปเดตเป็นเตรียมส่งมอบแล้ว สามารถกดพิมพ์ / PDF หรือปิดหน้าต่างได้"
-    : request ? `เปลี่ยนเครื่องหมาย ${count} รายการ · กดอัปเดตเพื่อเตรียมส่งมอบได้ แม้เตรียมสินค้าไม่ครบ`
-    : "เลือกใบเบิก แล้วติ๊กรายการที่เตรียมเสร็จและกดอัปเดตสถานะ";
+    : request ? `ปรับข้อมูล ${count} รายการ · กดอัปเดตเพื่อเตรียมส่งมอบได้ แม้เตรียมสินค้าไม่ครบ`
+    : "เลือกใบเบิก ระบุจำนวนที่จัดได้ แล้วกดอัปเดตสถานะ";
 }
 
 function selectPreparation() {
@@ -129,18 +185,16 @@ function changePreparationItem(request, item, checkbox) {
     checkbox.checked = preparationChanges.get(preparationChangeKey(request.requestId, item.itemId)) ?? item.prepared === true;
     return;
   }
-  const key = preparationChangeKey(request.requestId, item.itemId);
-  if (checkbox.checked === (item.prepared === true)) preparationChanges.delete(key);
-  else preparationChanges.set(key, checkbox.checked);
-  updatePreparationControls();
+  storePreparationAmount(request, item, { qty: checkbox.checked ? Number(item.qty) : 0, unit: item.unit, completion: checkbox.checked ? "full" : "none", note: preparationItemAmount(request, item).note });
 }
 
 async function loadPreparation(discardChanges = false) {
   if (preparationBusy) return;
   if (pendingPreparation && preparationRequests.length) return;
   if (preparationChanges.size) {
-    if (!discardChanges || !confirm("โหลดใบเบิกใหม่และยกเลิกเครื่องหมายที่ยังไม่ได้อัปเดตหรือไม่?")) return;
+    if (!discardChanges || !confirm("โหลดใบเบิกใหม่และยกเลิกจำนวนและผลการจัดที่ยังไม่ได้อัปเดตหรือไม่?")) return;
     preparationChanges.clear();
+    preparationAmounts.clear();
   }
   if (!settings || busy) {
     $("preparationMessage").textContent = busy
@@ -204,23 +258,34 @@ function renderPreparation() {
     details.className = "muted";
     details.textContent = [request.department, request.date, request.reason].filter(Boolean).join(" · ");
     card.append(heading, details);
-    for (const item of request.items) {
-      const label = document.createElement("label");
-      label.className = "preparation-item";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = preparationChanges.get(preparationChangeKey(request.requestId, item.itemId)) ?? item.prepared === true;
-      checkbox.disabled = preparationBusy || !!pendingPreparation || !editableDocumentStatus(request.status);
-      checkbox.addEventListener("change", () => changePreparationItem(request, item, checkbox));
-      const text = document.createElement("span");
-      text.className = "preparation-item-name";
-      text.textContent = item.name;
-      const quantity = document.createElement("span");
-      quantity.className = "preparation-item-quantity";
-      quantity.textContent = `${item.qty} ${item.unit}`;
-      label.append(checkbox, text, quantity);
-      card.append(label);
-    }
+    request.items.forEach((item, index) => {
+      const amount = preparationItemAmount(request, item);
+      const itemCard = document.createElement("article");
+      itemCard.className = "preparation-product-card";
+      const product = products.find((entry) => entry.barcode === item.barcode);
+      const units = [...new Set([item.unit, ...(product ? productUnits(product) : []), amount.unit])];
+      const disabled = preparationBusy || pendingPreparation || !editableDocumentStatus(request.status) ? "disabled" : "";
+      itemCard.innerHTML = `
+        <div class="preparation-product-heading"><strong class="preparation-item-name">${esc(item.name)}</strong><span id="preparedResult${index}" class="prepared-result">${amount.completion === "full" ? "ครบ" : amount.completion === "partial" ? "ได้บางส่วน" : amount.completion === "out" ? "หมด" : "ยังไม่ระบุ"}</span></div>
+        ${item.note ? `<p class="preparation-item-note">หมายเหตุผู้เบิก: ${esc(item.note)}</p>` : ""}
+        <div class="preparation-card-fields preparation-requested-fields">
+          <label>จำนวนขอเบิก<output class="requested-value">${esc(item.qty)}</output></label>
+          <label>หน่วย<output class="requested-value">${esc(item.unit)}</output></label>
+        </div>
+        <div class="preparation-card-fields">
+          <label>จำนวนที่จัดได้<input class="prepared-qty" type="number" min="0" max="1000000" step="any" aria-label="จำนวนที่จัดได้ ${esc(item.name)}" value="${Number.isFinite(amount.qty) ? amount.qty : ""}" oninput="changePreparationAmount(${index}, this.value, null)" ${disabled}></label>
+          <label>หน่วย<select class="prepared-unit" aria-label="หน่วยที่จัดได้ ${esc(item.name)}" onchange="changePreparationAmount(${index}, null, this.value)" ${disabled}>${units.map((unit) => `<option value="${esc(unit)}" ${unit === amount.unit ? "selected" : ""}>${esc(unit)}</option>`).join("")}</select></label>
+        </div>
+        <label class="preparation-note-field">หมายเหตุผู้จัด
+          <textarea id="preparedNote${index}" class="prepared-note" rows="2" maxlength="500" aria-label="หมายเหตุผู้จัด ${esc(item.name)}" placeholder="ระบุหมายเหตุ (ถ้ามี)" oninput="changePreparationNote(${index}, this.value)" ${disabled}>${esc(amount.note)}</textarea>
+        </label>
+        <div class="preparation-result-actions">
+          <button id="preparedFull${index}" type="button" aria-pressed="${amount.completion === "full"}" onclick="setPreparationCompletion(${index}, 'full')" ${disabled}>ครบ</button>
+          <button id="preparedPartial${index}" type="button" aria-pressed="${amount.completion === "partial"}" onclick="setPreparationCompletion(${index}, 'partial')" ${disabled}>ได้บางส่วน</button>
+          <button id="preparedOut${index}" type="button" aria-pressed="${amount.completion === "out"}" onclick="setPreparationCompletion(${index}, 'out')" ${disabled}>หมด</button>
+        </div>`;
+      card.append(itemCard);
+    });
     root.append(card);
   }
   updatePreparationControls();
@@ -231,8 +296,19 @@ async function updatePreparationStatus() {
   if (!pendingPreparation) {
     const request = preparationRequests.find((entry) => entry.requestId === preparationSelectedId);
     if (!request) return;
-    const changes = request.items.filter((item) => preparationChanges.has(preparationChangeKey(request.requestId, item.itemId)))
-      .map((item) => ({ itemId: String(item.itemId), prepared: preparationChanges.get(preparationChangeKey(request.requestId, item.itemId)), basePrepared: item.prepared === true }));
+    const changedItems = request.items.filter((item) => preparationChanges.has(preparationChangeKey(request.requestId, item.itemId)));
+    if (changedItems.some((item) => {
+      const amount = preparationItemAmount(request, item);
+      return !Number.isFinite(amount.qty) || amount.qty < 0 || amount.qty > 1000000 || (amount.unit === item.unit && amount.qty > Number(item.qty));
+    })) {
+      $("preparationDialogMessage").textContent = "กรุณาระบุจำนวนที่จัดได้ตั้งแต่ 0 และไม่เกินจำนวนขอเบิกในหน่วยเดียวกัน";
+      return;
+    }
+    const changes = changedItems.map((item) => {
+      const amount = preparationItemAmount(request, item);
+      return { itemId: String(item.itemId), prepared: amount.completion === "full", basePrepared: item.prepared === true,
+        preparedQty: amount.qty, preparedUnit: amount.unit, completion: amount.completion, preparerNote: amount.note || "", basePreparationWriteId: item.preparationWriteId || "" };
+    });
     pendingPreparation = { sheet: { ...settings }, body: { action: "prepareBatch", sheetId: settings.id,
       requestId: request.requestId, baseRevision: request.revision || "original", preparedBy: activeUser.name, writeId: newId(), changes } };
   }
@@ -267,7 +343,10 @@ async function updatePreparationStatus() {
     }
     if (result.status !== "saved" || !result.document) throw new Error("ยังยืนยันผลไม่ได้ กดตรวจผล / อัปเดตซ้ำเพื่อส่งชุดเดิมอีกครั้ง");
     const doc = result.document;
-    for (const item of queued.body.changes) preparationChanges.delete(preparationChangeKey(queued.body.requestId, item.itemId));
+    for (const item of queued.body.changes) {
+      preparationChanges.delete(preparationChangeKey(queued.body.requestId, item.itemId));
+      preparationAmounts.delete(preparationChangeKey(queued.body.requestId, item.itemId));
+    }
     preparationRequests = preparationRequests.map((request) => request.requestId === doc.requestId ? { ...request, ...doc } : request)
       .filter((request) => editableDocumentStatus(request.status) && request.items.some((item) => !item.prepared));
     localStorage.removeItem(STORAGE + ".preparation");
@@ -355,7 +434,15 @@ function printPreparationDocument() {
   if (preparationBusy || pendingPreparation || printStatusBusy || activeUser?.role !== "preparation") return;
   const request = currentPreparationDocument();
   if (!request || !request.items.length) return;
-  return renderRequisitionPrint({ ...request, items: request.items.map((item) => ({ ...item, qty: Number(item.qty) })) }, esc(request.number), {
-    requestId: request.requestId, revision: request.revision || "original", source: { ...(request.source || settings) },
+  const printItems = request.items.map((item) => {
+    const amount = preparationItemAmount(request, item);
+    return { ...item, qty: Number(item.qty), preparedQty: amount.qty, preparedUnit: amount.unit, completion: amount.completion, preparerNote: amount.note };
   });
+  if (printItems.some((item) => !Number.isFinite(item.preparedQty) || item.preparedQty < 0)) {
+    $("preparationDialogMessage").textContent = "กรุณาระบุจำนวนที่จัดได้ตั้งแต่ 0 ก่อนเปิดตัวอย่างเอกสาร";
+    return;
+  }
+  return renderRequisitionPrint({ ...request, items: printItems }, esc(request.number), {
+    requestId: request.requestId, revision: request.revision || "original", source: { ...(request.source || settings) },
+  }, true);
 }

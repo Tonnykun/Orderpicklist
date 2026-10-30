@@ -8,6 +8,21 @@ let items = [];
 let saved = false;
 
 let editing = false;
+let editSaveInFlight = false;
+let closeHistoryAfterSave = false;
+let historyEditBaseline = "";
+
+function hasUnsavedHistoryChanges() {
+  return editing && JSON.stringify(payload()) !== historyEditBaseline;
+}
+
+function confirmCloseHistoryWithSave() {
+  if (busy || editSaveInFlight || pending || !editing) return;
+  $("historyUnsavedDialog").close();
+  if (!valid()) return;
+  closeHistoryAfterSave = true;
+  return saveEditedDoc();
+}
 
 let savedRevision = "original";
 
@@ -27,9 +42,9 @@ let historyReloadQueued = false;
 
 let displayedHistoryId = "";
 
-let reservedNumber = "";
+let draftNumber = "";
 
-let reservationSource = null;
+let draftSource = null;
 
 let documentCache = new Map();
 
@@ -71,17 +86,23 @@ async function preloadHistoryDocuments(source, documents, generation) {
 }
 
 function closeHistoryDocument(force = false) {
-  if (!force && (busy || pending)) return;
-  if (!force && editing && !confirm("ปิดใบเบิกและยกเลิกการแก้ไขที่ยังไม่ได้บันทึกหรือไม่?")) return;
+  if (!force && (busy || editSaveInFlight || pending)) return;
+  if (!force && hasUnsavedHistoryChanges()) {
+    if (!$("historyUnsavedDialog").open) $("historyUnsavedDialog").showModal();
+    return;
+  }
+  if ($("historyUnsavedDialog").open) $("historyUnsavedDialog").close();
   $("historyDialog").close();
+  closeHistoryAfterSave = false;
+  historyEditBaseline = "";
   const snapshot = historyDraftSnapshot;
   historyDraftSnapshot = null;
   if (snapshot) {
-    ({ items, requestId, saved, editing, savedRevision, currentDocumentStatus, reservedNumber, reservationSource } = snapshot);
+    ({ items, requestId, saved, editing, savedRevision, currentDocumentStatus, draftNumber, draftSource } = snapshot);
     for (const [key, value] of Object.entries(snapshot.fields)) $(key).value = value;
     displayedHistoryId = "";
-    if (reservationSource) {
-      try { writeLocal(STORAGE + ".reservation", { requestId, sheet: reservationSource }); }
+    if (draftSource) {
+      try { writeLocal(STORAGE + ".draft", { requestId, sheet: draftSource }); }
       catch { /* คืนร่างในหน่วยความจำได้ แม้พื้นที่จัดเก็บของเบราว์เซอร์ไม่พร้อม */ }
     }
   } else resetDraft();
@@ -89,7 +110,7 @@ function closeHistoryDocument(force = false) {
   render();
 }
 
-function canAddItems() { return editing || (!!reservedNumber && !!reservationSource); }
+function canAddItems() { return editing || (!!draftNumber && !!draftSource); }
 
 function requireDocumentNumber() {
   if (canAddItems()) return true;
@@ -172,9 +193,9 @@ async function loadRequisitionHistory(refreshAfterBusy = false) {
 }
 
 function showSavedDocument(doc) {
-  reservedNumber = "";
-  reservationSource = null;
-  items = doc.items.map(({ barcode, name, qty, unit }) => ({ barcode, name, qty, unit }));
+  draftNumber = "";
+  draftSource = null;
+  items = doc.items.map((item) => ({ ...item, note: item.note || "" }));
   for (const key of ["requester", "department", "date", "reason"]) $(key).value = doc[key] || "";
   requestId = doc.requestId;
   $("docno").value = doc.number;
@@ -198,7 +219,7 @@ async function loadSelectedRequisition() {
     if (!$("historyDialog").open && !saved) {
       historyDraftSnapshot = {
         items: items.map((item) => ({ ...item })), requestId, saved, editing, savedRevision, currentDocumentStatus,
-        reservedNumber, reservationSource,
+        draftNumber, draftSource,
         fields: Object.fromEntries(["requester", "department", "date", "reason", "docno"].map((key) => [key, $(key).value])),
       };
     }
@@ -220,7 +241,7 @@ async function loadSelectedRequisition() {
 }
 
 function state() {
-  const locked = busy || saved || !!pending;
+  const locked = busy || editSaveInFlight || saved || !!pending;
   const historical = viewingHistoryDocument();
 
   for (const element of document.querySelectorAll(
@@ -233,7 +254,9 @@ function state() {
   $("newBtn").disabled = busy || !!pending;
   $("userBtn").disabled = !!pending || !!pendingPreparation || preparationBusy || editing;
   $("historyPrintBtn").disabled = busy || printStatusBusy || !!pending || !historical;
-  $("historyCloseBtn").disabled = busy || !!pending;
+  $("historyCloseBtn").disabled = busy || editSaveInFlight || !!pending;
+  $("historyCloseBtn").textContent = "✕ ปิด";
+  $("historyCloseBtn").setAttribute("aria-label", "ปิดใบเบิกย้อนหลัง");
   $("historyAddBtn").hidden = !historical || !editing;
   $("historyAddBtn").disabled = busy || !!pending || !editing || !editableDocumentStatus(currentDocumentStatus);
   for (const key of ["Requester", "Department", "Date", "Reason"]) $("history" + key).disabled = busy || !!pending || !editing;
@@ -243,27 +266,28 @@ function state() {
   $("scannerLaunchHint").textContent = canAddItems()
     ? "เลขที่ " + $("docno").value + " · พร้อมสแกนหรือเพิ่มสินค้า"
     : "กด “ใบเบิกใหม่” ในกล่องข้อมูลการขอเบิกเพื่อรับเลขที่เอกสารก่อนเพิ่มสินค้า";
-  $("newBtn").textContent = busy && reservationSource && !reservedNumber ? "กำลังรับเลขเอกสาร…" : "＋ ใบเบิกใหม่";
+  $("newBtn").textContent = busy && draftSource && !draftNumber ? "กำลังรับเลขเอกสาร…" : "＋ ใบเบิกใหม่";
   $("editBtn").disabled = busy || !!pending || !historical || (!editing && (!saved || !editableDocumentStatus(currentDocumentStatus)));
-  $("saveEditBtn").disabled = busy || !historical || !editing;
+  $("saveEditBtn").disabled = busy || editSaveInFlight || !!pending || saved || !historical || !editing;
+  $("saveEditBtn").setAttribute("aria-busy", String(editSaveInFlight));
   $("editBtn").textContent = editing ? "ยกเลิกแก้ไข" : "แก้ไขรายการ";
-  if (!busy) {
+  if (!busy && !editSaveInFlight) {
     $("saveBtn").textContent = "บันทึกลง Sheets";
-    $("saveEditBtn").textContent = pending?.operation === "update" ? "บันทึกการแก้ไขซ้ำ" : "บันทึกการแก้ไข";
+    $("saveEditBtn").textContent = pending?.operation === "update" ? "รอยืนยันผลบันทึก" : saved && historical ? "บันทึกแล้ว" : "บันทึกการแก้ไข";
   }
   $("retryCancel").hidden = !pending || historical;
   $("retryCancel").disabled = busy;
   $("historyRetryCancel").hidden = !pending || !historical;
-  $("historyRetryCancel").disabled = busy;
+  $("historyRetryCancel").disabled = busy || editSaveInFlight;
 
   const saveMessage = saved
     ? "บันทึกแล้ว • " + $("docno").value + " • " + documentStage(currentDocumentStatus)
     : pending
-      ? "รอยืนยันผลบันทึก กดบันทึกซ้ำได้ด้วยคำขอเดิม"
+      ? pending.operation === "update" ? "รอยืนยันผลบันทึก กดตรวจผล / ส่งซ้ำด้วยคำขอเดิม" : "รอยืนยันผลบันทึก กดบันทึกซ้ำได้ด้วยคำขอเดิม"
       : editing ? "กำลังแก้ไขใบเบิก • " + $("docno").value
       : "ยังไม่ได้บันทึกเอกสาร";
   $("saveState").textContent = historical ? "รายการใบเบิกที่เลือกแสดงในส่วนด้านล่าง" : saveMessage;
-  $("historySaveState").textContent = historical ? (saved ? documentStage(currentDocumentStatus) : saveMessage) : "";
+  $("historySaveState").textContent = historical ? (saved ? "บันทึกแล้ว • " + documentStage(currentDocumentStatus) : saveMessage) : "";
   historyControls();
   if (activeUser?.role === "preparation") updatePreparationControls();
 }
@@ -273,13 +297,36 @@ function pendingKey() {
 }
 
 function clearPending() {
-  localStorage.removeItem(pendingKey());
+  // ผลยืนยันจากเซิร์ฟเวอร์ต้องไม่ขึ้นกับการล้างแคชของเบราว์เซอร์
   pending = null;
+  try {
+    localStorage.removeItem(pendingKey());
+  } catch {
+    try { writeLocal(pendingKey(), null); }
+    catch { /* คำขอเก่าที่เหลืออยู่ตรวจผลซ้ำได้โดยไม่เขียนเอกสารซ้ำ */ }
+  }
 }
 
 function applySaved(number) {
   const wasEdit = pending?.operation === "update";
+  const revision = pending?.editId;
+  const shouldClose = closeHistoryAfterSave;
   clearPending();
+  if (wasEdit) {
+    saved = true;
+    editing = false;
+    savedRevision = revision || savedRevision;
+    closeHistoryAfterSave = false;
+    historyEditBaseline = "";
+    $("historyDialogMessage").textContent = "บันทึกการแก้ไขแล้ว";
+    documentCache.delete(requestId);
+    if (shouldClose) closeHistoryDocument(true);
+    else if (!$("historyDialog").open) $("historyDialog").showModal();
+    render();
+    notify("บันทึกการแก้ไขใบเบิก " + number + " แล้ว");
+    loadRequisitionHistory(true);
+    return;
+  }
   if ($("historyDialog").open && historyDraftSnapshot) closeHistoryDocument(true);
   else {
     resetDraft();
@@ -312,9 +359,15 @@ async function editSavedDoc() {
     documentCache.set(requestId, documentData);
     saved = cancelEdit;
     editing = !cancelEdit;
+    closeHistoryAfterSave = false;
+    historyEditBaseline = cancelEdit ? "" : JSON.stringify(payload());
     if (catalog) {
       products = catalog.products;
       catalogLoaded = true;
+      const defaulted = useDefaultItemUnits();
+      $("historyDialogMessage").textContent = defaulted
+        ? "สินค้าที่หน่วยนับในชีตว่าง ใช้หน่วย “ชิ้น” ให้แล้ว " + defaulted + " รายการ"
+        : "";
     }
     $("results").replaceChildren();
     $("search").value = "";
@@ -334,7 +387,7 @@ function readSaveStatus(p) {
 }
 
 async function checkSaveResult() {
-  if (busy || !pending) return;
+  if (busy || editSaveInFlight || !pending) return;
   busy = true;
   state();
 
@@ -378,17 +431,64 @@ async function waitForReceipt(p) {
   throw new Error("ยังไม่พบผลบันทึก กรุณากดตรวจผลหรือบันทึกซ้ำ ไม่ต้องสร้างใบเบิกใหม่");
 }
 
-function saveEditedDoc() {
-  if (!editing || !viewingHistoryDocument()) return;
+async function saveEditedDoc() {
+  const message = $("historyDialogMessage");
+  try {
+    if (pending) {
+      message.textContent = "มีคำขอรอยืนยันผล กรุณากด “ตรวจผล / ส่งซ้ำ” ก่อนบันทึกครั้งใหม่";
+      return;
+    }
+    if (busy || editSaveInFlight) {
+      message.textContent = "กำลังดำเนินการ กรุณารอให้เสร็จก่อนบันทึกการแก้ไข";
+      return;
+    }
+    if (!editing || !viewingHistoryDocument()) {
+      state();
+      message.textContent = saved ? "บันทึกแล้ว หากต้องการเปลี่ยนข้อมูลให้กด “แก้ไขรายการ”"
+        : "ยังไม่ได้เปิดใบเบิกเพื่อแก้ไข กรุณาเลือกใบเบิกแล้วกด “แก้ไขรายการ”";
+      return;
+    }
+    message.textContent = "กำลังตรวจสอบข้อมูลก่อนบันทึก…";
+    // อ่านช่องใน Popup โดยตรงด้วย รองรับ autofill ที่ไม่ได้ส่ง input event
+    if ($("historyDialog").open) {
+      for (const key of ["requester", "department", "date", "reason"]) {
+        $(key).value = $("history" + key[0].toUpperCase() + key.slice(1)).value;
+      }
+    }
+    if (!valid()) {
+      message.textContent = $("validationMessage").textContent;
+      return;
+    }
+    useDefaultItemUnits();
+    const invalidUnit = items.find((item) => {
+      const product = products.find((p) => p.barcode === item.barcode);
+      return product && !productUnits(product).includes(item.unit);
+    });
+    if (invalidUnit) {
+      const product = products.find((p) => p.barcode === invalidUnit.barcode);
+      message.textContent = "หน่วยสินค้า “" + invalidUnit.name + "” ไม่ตรงกับชีต กรุณาเปลี่ยนจาก “" + invalidUnit.unit + "” เป็น: " + productUnits(product).join(", ");
+      return;
+    }
+    await saveDoc("edit");
+  } catch (error) {
+    message.textContent = "บันทึกการแก้ไขไม่สำเร็จ: " + error.message;
+  }
+}
+
+function retryEditedDoc() {
+  if (editSaveInFlight || busy || pending?.operation !== "update" || !editing || !viewingHistoryDocument()) return;
   return saveDoc("edit");
 }
 
 async function saveDoc(origin = "draft") {
   if ((editing && origin !== "edit") || (!editing && origin === "edit")) return;
-  if (busy || saved || !valid()) return;
+  if (busy || editSaveInFlight || saved || !valid()) return;
+  const savingEdit = editing;
+  if (savingEdit) editSaveInFlight = true;
   busy = true;
   state();
   $(editing ? "saveEditBtn" : "saveBtn").textContent = "กำลังบันทึก…";
+  if (savingEdit) $("historyDialogMessage").textContent = "กำลังบันทึกการแก้ไข…";
 
   try {
     if (!pending) {
@@ -457,11 +557,17 @@ async function saveDoc(origin = "draft") {
   } catch (error) {
     if (error.rejected && pending && !pending.hadUncertain) {
       clearPending();
+      if (savingEdit) $("historyDialogMessage").textContent = "ยังไม่ได้บันทึก: " + error.message;
       notify("ยังไม่ได้บันทึก: " + error.message + "\nสามารถแก้ไขแล้วลองใหม่ได้", true);
     } else {
-      notify(error.message + "\nกด “ตรวจผลบันทึก” หรือบันทึกซ้ำเพื่อยืนยันผลเดิม", true);
+      if (savingEdit) $("historyDialogMessage").textContent = pending
+        ? "ยังยืนยันผลบันทึกไม่ได้ กรุณากด “ตรวจผล / ส่งซ้ำ” · " + error.message
+        : "ยังไม่ได้บันทึก: " + error.message;
+      notify(error.message + (savingEdit ? "\nกด “ตรวจผล / ส่งซ้ำ” เพื่อยืนยันผลเดิม" : "\nกด “ตรวจผลบันทึก” หรือบันทึกซ้ำเพื่อยืนยันผลเดิม"), true);
     }
   } finally {
+    if (savingEdit) editSaveInFlight = false;
+    if (savingEdit && editing && !pending) closeHistoryAfterSave = false;
     busy = false;
     render();
   }
@@ -469,15 +575,21 @@ async function saveDoc(origin = "draft") {
 
 function render() {
   const historical = viewingHistoryDocument();
+  const fulfilled = historical && saved && !editing && documentStage(currentDocumentStatus) === "เตรียมส่งมอบ";
   const rows = items
     .map(
-      (product, index) => `
+      (source, index) => {
+        const product = fulfilled ? { ...source, qty: source.preparedQty ?? (source.prepared ? source.qty : 0), unit: source.preparedUnit || source.unit } : source;
+        return `
     <tr>
-      <td>
-        <strong>${esc(product.name)}</strong>
+      <td colspan="4" class="request-item-cell">
+        <div class="request-item-heading">
+          <strong>${esc(product.name)}</strong>
+          <button class="remove" aria-label="ลบ ${esc(product.name)}" onclick="removeItem(${index})" ${busy || saved || pending ? "disabled" : ""}>×</button>
+        </div>
         <div class="muted item-barcode">${esc(product.barcode)}</div>
-      </td>
-      <td>
+        <div class="request-item-fields">
+          <label>${fulfilled ? "จำนวนที่ได้" : "จำนวน"}
         <input
           aria-label="จำนวน ${esc(product.name)}"
           type="number"
@@ -488,23 +600,20 @@ function render() {
           oninput="items[${index}].qty = Number(this.value)"
           onchange="items[${index}].qty = Number(this.value)"
           ${busy || saved || pending ? "disabled" : ""}
-        >
-      </td>
-      <td>
+        ></label>
+          <label>หน่วยสินค้า
         <select aria-label="หน่วย ${esc(product.name)}" onchange="changeItemUnit(${index}, this.value)" ${busy || saved || pending ? "disabled" : ""}>
           ${itemUnitOptions(product).map((unit) => `<option value="${esc(unit)}" ${unit === product.unit ? "selected" : ""}>${esc(unit)}</option>`).join("")}
-        </select>
-      </td>
-      <td>
-        <button
-          class="remove"
-          aria-label="ลบ ${esc(product.name)}"
-          onclick="removeItem(${index})"
-          ${busy || saved || pending ? "disabled" : ""}
-        >×</button>
+        </select></label>
+        </div>
+        ${fulfilled ? `<div class="muted">สถานะรายการ: ${product.completion === "full" ? "ครบ" : product.completion === "partial" ? "ได้บางส่วน" : product.completion === "out" ? "หมด" : "ยังไม่ระบุ"}</div>` : ""}
+        <label class="request-item-note-label">${fulfilled ? "หมายเหตุผู้เบิก" : "หมายเหตุ"}
+          <input class="item-note-input" type="text" aria-label="หมายเหตุ ${esc(product.name)}" maxlength="500" placeholder="หมายเหตุ" value="${esc(product.note || "")}" oninput="items[${index}].note = this.value" ${busy || saved || pending ? "disabled" : ""}>
+        </label>
+        ${fulfilled && (product.note || product.preparerNote) ? `<label class="request-item-note-label">หมายเหตุผู้จัด<input class="item-note-input" type="text" value="${esc(product.preparerNote || "")}" disabled></label>` : ""}
       </td>
     </tr>
-  `,
+  `; },
     )
     .join("");
 
@@ -570,6 +679,7 @@ function addProduct(code) {
   $("selectedProductName").textContent = p.name;
   $("selectedProductBarcode").textContent = "บาร์โค้ด: " + p.barcode;
   $("selectedProductQty").value = "1";
+  $("selectedProductNote").value = "";
   $("selectedProductUnit").replaceChildren();
   for (const unit of productUnits(p)) {
     const option = document.createElement("option");
@@ -580,8 +690,7 @@ function addProduct(code) {
   $("selectedProductUnit").value = productUnits(p)[0];
   $("productDialogMessage").textContent = "";
   $("productDialog").showModal();
-  $("selectedProductQty").focus();
-  $("selectedProductQty").select();
+  $("productDialogTitle").focus();
 }
 
 function productUnits(product) {
@@ -590,12 +699,26 @@ function productUnits(product) {
   return units.length ? units : ["ชิ้น"];
 }
 
+function useDefaultItemUnits() {
+  const catalog = new Map(products.map((product) => [product.barcode, product]));
+  let count = 0;
+  for (const item of items) {
+    const product = catalog.get(item.barcode);
+    if (product?.unitDefaulted && item.unit !== "ชิ้น") {
+      item.unit = "ชิ้น";
+      count++;
+    }
+  }
+  return count;
+}
+
 function confirmProduct(event) {
   event.preventDefault();
   if (!selectedProduct || busy || saved || pending) return;
   if (!requireDocumentNumber()) return;
   const qty = Number($("selectedProductQty").value);
   const unit = $("selectedProductUnit").value;
+  const note = $("selectedProductNote").value.trim();
   const old = items.find((item) => item.barcode === selectedProduct.barcode && item.unit === unit);
   if (!Number.isFinite(qty) || qty < 0.001 || qty > 1000000 || (old && old.qty + qty > 1000000)) {
     $("productDialogMessage").textContent = "กรุณาระบุจำนวนตั้งแต่ 0.001 โดยยอดรวมต่อรายการต้องไม่เกิน 1,000,000";
@@ -610,8 +733,13 @@ function confirmProduct(event) {
     return;
   }
   const name = selectedProduct.name;
-  if (old) old.qty += qty;
-  else items.push({ barcode: selectedProduct.barcode, name, qty, unit });
+  const mergedNote = old ? [...new Set([old.note || "", note].filter(Boolean))].join("; ") : note;
+  if (mergedNote.length > 500) {
+    $("productDialogMessage").textContent = "หมายเหตุรวมต้องไม่เกิน 500 ตัวอักษร";
+    return;
+  }
+  if (old) { old.qty += qty; old.note = mergedNote; }
+  else items.push({ barcode: selectedProduct.barcode, name, qty, unit, note });
   $("productDialog").close();
   selectedProduct = null;
   render();
@@ -714,12 +842,13 @@ function printDoc() {
 
   const documentData = payload();
   const number = esc($("docno").value) + (saved ? "" : editing ? " (ฉบับแก้ไข — ยังไม่ได้บันทึก)" : " (ฉบับร่าง — ยังไม่ได้บันทึก)");
-  return renderRequisitionPrint(documentData, number, printContext);
+  return renderRequisitionPrint(documentData, number, printContext, saved && !editing && documentStage(currentDocumentStatus) === "เตรียมส่งมอบ");
 }
 
 function resetDraft() {
-  reservedNumber = "";
-  reservationSource = null;
+  draftNumber = "";
+  draftSource = null;
+  localStorage.removeItem(STORAGE + ".draft");
   localStorage.removeItem(STORAGE + ".reservation");
   items = [];
   saved = false;
@@ -740,41 +869,42 @@ function resetDraft() {
 async function newDoc() {
   if (busy || pending) return;
   if (!settings) return validationFailure("กรุณาตั้งค่าชีตก่อนสร้างใบเบิก");
-  if ((items.length || reservedNumber) && !saved && !confirm("ต้องการสร้างใบเบิกใหม่และล้างรายการปัจจุบันหรือไม่? เลขเดิมที่จองไว้จะไม่ถูกนำกลับมาใช้ซ้ำ")) return;
+  if ((items.length || draftNumber) && !saved && !confirm("ต้องการสร้างใบเบิกใหม่และล้างรายการปัจจุบันหรือไม่? ใบเบิกเดิมที่สร้างไว้จะยังอยู่ในชีต")) return;
+  const retrying = !!draftSource && !draftNumber && !saved && !editing;
   // ถ้าการรับเลขครั้งก่อนขัดข้อง ใช้ requestId เดิมเพื่อตรวจและส่งซ้ำอย่างปลอดภัย
-  if (!reservationSource || reservedNumber || saved || editing) {
+  if (!draftSource || draftNumber || saved || editing) {
     resetDraft();
-    reservationSource = { ...settings };
+    draftSource = { ...settings };
   }
   busy = true;
   state();
   try {
-    writeLocal(STORAGE + ".reservation", { requestId, sheet: reservationSource });
-    let result = await readBridge(reservationSource, "reservation", { requestId });
-    if (result.status === "saved") throw new Error("ใบเบิกนี้บันทึกแล้ว กรุณาเลือกใบเบิกที่บันทึกไว้ หรือโหลดหน้าใหม่");
-    if (result.status !== "reserved") {
-      const body = { action: "reserve", sheetId: reservationSource.id, requestId,
+    writeLocal(STORAGE + ".draft", { requestId, sheet: draftSource });
+    let result = retrying ? await readBridge(draftSource, "draftStatus", { requestId }) : null;
+    if (result?.status === "saved") throw new Error("ใบเบิกนี้บันทึกแล้ว กรุณาเลือกใบเบิกที่บันทึกไว้ หรือโหลดหน้าใหม่");
+    if (result?.status !== "draft") {
+      const body = { action: "create", sheetId: draftSource.id, requestId,
         requester: $("requester").value.trim(), department: $("department").value.trim(), date: $("date").value };
-      authorizeEndpointRequest(reservationSource.endpoint, body);
+      authorizeEndpointRequest(draftSource.endpoint, body);
       const controller = new AbortController();
       const deadline = setTimeout(() => controller.abort(), 25000);
       try {
-        await fetch(reservationSource.endpoint, { method: "POST", mode: "no-cors", credentials: "omit",
+        await fetch(draftSource.endpoint, { method: "POST", mode: "no-cors", credentials: "omit",
           headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify(body), signal: controller.signal });
-      } catch { /* ตรวจเลขที่จองไว้ แม้คำตอบ POST ขาดหาย */ }
+      } catch { /* ตรวจแถวใบเบิกที่สร้างไว้ แม้คำตอบ POST ขาดหาย */ }
       finally { clearTimeout(deadline); }
       for (let attempt = 0; attempt < 6; attempt++) {
-        result = await readBridge(reservationSource, "reservation", { requestId });
-        if (result.status === "reserved") break;
+        result = await readBridge(draftSource, "draftStatus", { requestId });
+        if (result.status === "draft") break;
         if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     }
-    if (result.status !== "reserved" || !/^REQ-\d{9,}$/.test(result.number || "")) {
+    if (result.status !== "draft" || !/^REQ-\d{9,}$/.test(result.number || "")) {
       throw new Error("ยังไม่ได้รับเลขเอกสาร กรุณากดใบเบิกใหม่เพื่อตรวจผลเดิมอีกครั้ง");
     }
-    reservedNumber = result.number;
-    $("docno").value = reservedNumber;
-    notify("สร้างใบเบิก " + reservedNumber + " แล้ว สามารถสแกนหรือเพิ่มสินค้าได้");
+    draftNumber = result.number;
+    $("docno").value = draftNumber;
+    notify("สร้างใบเบิก " + draftNumber + " แล้ว สามารถสแกนหรือเพิ่มสินค้าได้");
   } catch (error) {
     notify("สร้างใบเบิกไม่สำเร็จ: " + error.message + " · หากยังไม่ได้อัปเดต กรุณา Deploy Code.gs เวอร์ชันล่าสุด", true);
   } finally {

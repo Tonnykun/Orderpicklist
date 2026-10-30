@@ -126,10 +126,44 @@ function esc(value) {
 }
 
 let notificationTimer = null;
+let notificationDialogs = [];
+let notificationLayerObserver = null;
+
+function syncNotificationLayer() {
+  const toast = $("message");
+  notificationDialogs = notificationDialogs.filter((dialog) => dialog.open);
+  for (const dialog of document.querySelectorAll("dialog[open]")) {
+    if (!notificationDialogs.includes(dialog)) notificationDialogs.push(dialog);
+  }
+  const host = notificationDialogs[notificationDialogs.length - 1] || document.body;
+  const isPopoverOpen = typeof toast.matches === "function" && toast.matches(":popover-open");
+  if (toast.parentElement === host && isPopoverOpen) return;
+  // อยู่ภายใน modal เพื่อให้ปุ่มปิด Toast กดได้ และยกขึ้น top layer เหนือ backdrop
+  if (typeof toast.hidePopover === "function" && isPopoverOpen) toast.hidePopover();
+  if (host?.append && toast.parentElement !== host) host.append(toast);
+  if (typeof toast.showPopover === "function" && toast.style.display === "block") {
+    if (toast.popover !== "manual") toast.popover = "manual";
+    toast.showPopover();
+  }
+}
+
+function initNotificationLayer() {
+  if (notificationLayerObserver || typeof MutationObserver === "undefined") return;
+  notificationLayerObserver = new MutationObserver((records) => {
+    for (const { target } of records) {
+      if (target.tagName !== "DIALOG") continue;
+      notificationDialogs = notificationDialogs.filter((dialog) => dialog !== target && dialog.open);
+      if (target.open) notificationDialogs.push(target);
+    }
+    if ($("message").style.display === "block") syncNotificationLayer();
+  });
+  notificationLayerObserver.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
+}
 
 function dismissNotification() {
   clearTimeout(notificationTimer);
   notificationTimer = null;
+  if (typeof $("message").hidePopover === "function") $("message").hidePopover();
   $("message").style.display = "none";
 }
 
@@ -146,6 +180,7 @@ function notify(text, error = false) {
   close.onclick = dismissNotification;
   toast.append(close);
   toast.style.display = "block";
+  syncNotificationLayer();
   toast.style.animation = "none";
   void toast.offsetWidth;
   toast.style.animation = "";
@@ -362,7 +397,7 @@ async function syncSharedSettings() {
     }
 
     // ไม่สลับฐานข้อมูลของใบเบิกที่กำลังกรอกอยู่
-    if ((items.length || reservationSource) && (settings?.id !== shared.id || settings?.endpoint !== shared.endpoint)) {
+    if ((items.length || draftSource) && (settings?.id !== shared.id || settings?.endpoint !== shared.endpoint)) {
       notify(
         "ส่วนกลางเปลี่ยนการเชื่อมต่อแล้ว ใบเบิกปัจจุบันยังใช้ค่าเดิม เปิดใบเบิกใหม่เพื่อโหลดค่าล่าสุด",
       );
@@ -482,8 +517,9 @@ async function saveSheet() {
     displayedHistoryId = "";
     $("historySelect").value = "";
     requestId = newId();
-    reservedNumber = "";
-    reservationSource = null;
+    draftNumber = "";
+    draftSource = null;
+    localStorage.removeItem(STORAGE + ".draft");
     localStorage.removeItem(STORAGE + ".reservation");
     $("docno").value = "กดใบเบิกใหม่เพื่อรับเลขเอกสาร";
     $("saveBtn").textContent = "บันทึกลง Sheets";
@@ -705,7 +741,7 @@ async function markDocumentPrinted(context) {
   } finally { printStatusBusy = false; state(); }
 }
 
-function renderRequisitionPrint(documentData, number, printContext = null) {
+function renderRequisitionPrint(documentData, number, printContext = null, preparationResult = false) {
   const printItems = documentData.items;
   const rows = printItems
     .map(
@@ -713,16 +749,19 @@ function renderRequisitionPrint(documentData, number, printContext = null) {
     <tr>
       <td class="print-center">${index + 1}</td>
       <td class="print-code">${esc(item.barcode)}</td>
-      <td>${esc(item.name)}</td>
-      <td class="print-quantity">${new Intl.NumberFormat("th-TH", { maximumSignificantDigits: 21 }).format(item.qty)}</td>
-      <td class="print-center">${esc(item.unit)}</td>
+      <td>${esc(item.name)}${preparationResult && (item.note || item.preparerNote)
+        ? `<div class="print-item-note">หมายเหตุผู้เบิก: ${esc(item.note || "—")}</div><div class="print-item-note">หมายเหตุผู้จัด: ${esc(item.preparerNote || "—")}</div>`
+        : item.note ? `<div class="print-item-note">หมายเหตุ: ${esc(item.note)}</div>` : ""}</td>
+      <td class="print-quantity">${new Intl.NumberFormat("th-TH", { maximumSignificantDigits: 21 }).format(preparationResult ? (item.preparedQty ?? (item.prepared ? item.qty : 0)) : item.qty)}</td>
+      <td class="print-center">${esc(preparationResult ? (item.preparedUnit || item.unit) : item.unit)}</td>
+      ${preparationResult ? `<td class="print-center">${item.completion === "full" || (!item.completion && item.prepared) ? "ครบ" : item.completion === "partial" ? "ได้บางส่วน" : item.completion === "out" ? "หมด" : "ยังไม่ระบุ"}</td>` : ""}
     </tr>
   `,
     )
     .join("");
 
   const emptyPrintRows = Array.from({ length: Math.max(0, 20 - printItems.length) }, () =>
-    '<tr class="print-empty-row" aria-hidden="true"><td></td><td></td><td></td><td></td><td></td></tr>'
+    '<tr class="print-empty-row" aria-hidden="true"><td></td><td></td><td></td><td></td><td></td>' + (preparationResult ? '<td></td>' : '') + '</tr>'
   ).join("");
 
   $("printArea").innerHTML = `
@@ -741,14 +780,17 @@ function renderRequisitionPrint(documentData, number, printContext = null) {
       </div>
     </div>
     <table class="print-items">
-      <colgroup><col style="width:6%"><col style="width:20%"><col style="width:50%"><col style="width:12%"><col style="width:12%"></colgroup>
+      <colgroup>${preparationResult
+        ? '<col style="width:5%"><col style="width:18%"><col style="width:39%"><col style="width:12%"><col style="width:12%"><col style="width:14%">'
+        : '<col style="width:6%"><col style="width:20%"><col style="width:50%"><col style="width:12%"><col style="width:12%">'}</colgroup>
       <thead>
         <tr>
           <th>#</th>
           <th>บาร์โค้ด</th>
           <th>รายการสินค้า</th>
-          <th>จำนวนเบิก</th>
+          <th>${preparationResult ? "จำนวนที่ได้" : "จำนวนเบิก"}</th>
           <th>หน่วยนับ</th>
+          ${preparationResult ? '<th>สถานะรายการ</th>' : ''}
         </tr>
       </thead>
       <tbody>${rows}${emptyPrintRows}</tbody>

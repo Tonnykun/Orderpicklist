@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <title>MM Bakery • ใบเบิกสินค้า</title>
-    <link rel="stylesheet" href="Style.css?v=island-toast-20261029" />
+    <link rel="stylesheet" href="Style.css?v=preparation-out-20261030" />
   </head>
   <body>
     <header>
@@ -39,7 +39,7 @@
             <h2>สำหรับเตรียมของ</h2>
             <button id="loadPreparationBtn" onclick="loadPreparation(true)">↻ โหลดใบเบิกที่รอเตรียม</button>
           </div>
-          <p class="muted">เลือกใบเบิก ติ๊กสินค้าที่เตรียมแล้ว จากนั้นกดอัปเดตเพื่อเตรียมส่งมอบได้ทันที แม้สินค้าบางรายการจะไม่พร้อม</p>
+          <p class="muted">เลือกใบเบิก ระบุจำนวนที่จัดได้ และเลือกครบหรือได้บางส่วน จากนั้นกดอัปเดตเพื่อเตรียมส่งมอบ</p>
           <p id="preparationCatalogStatus" class="status" role="status" aria-live="polite"></p>
           <label>เลือกใบเบิก<select id="preparationSelect" onchange="selectPreparation()"><option value="">เลือกใบเบิกเพื่อแสดงรายการ</option></select></label>
 
@@ -50,7 +50,7 @@
             <h2>สรุปใบเบิก</h2>
             <div class="summary"><span class="muted">ใบเบิกที่รอเตรียม</span><span class="big" id="preparationDocumentTotal">0</span></div>
             <div class="summary"><span class="muted">รายการสินค้าทั้งหมด</span><span class="big" id="preparationItemTotal">0</span></div>
-            <div class="summary"><span class="muted">รายการที่เตรียมแล้ว</span><span class="big" id="preparationDoneTotal">0</span></div>
+            <div class="summary"><span class="muted">รายการที่จัดครบ</span><span class="big" id="preparationDoneTotal">0</span></div>
             <p id="preparationSummaryState" class="muted" role="status" aria-live="polite">ยังไม่ได้โหลดใบเบิก</p>
           </section>
         </aside>
@@ -184,7 +184,6 @@
           <label>วันที่ขอเบิก<input id="historyDate" type="date" oninput="document.getElementById('date').value = this.value" disabled /></label>
           <label>เหตุผลในการเบิก<textarea id="historyReason" rows="2" maxlength="2000" oninput="document.getElementById('reason').value = this.value" disabled></textarea></label>
         </div>
-        <p id="historyDialogMessage" class="status" role="status" aria-live="polite"></p>
                 <div class="history-items-toolbar">
                   <strong>รายการสินค้า</strong>
                   <button id="historyAddBtn" class="primary" type="button" onclick="openHistoryScanner()" hidden>＋ เพิ่มรายการ</button>
@@ -196,11 +195,12 @@
                   </table>
                 </div>
                 <p id="historySaveState" class="muted" role="status" aria-live="polite"></p>
+                <p id="historyDialogMessage" class="status" role="status" aria-live="polite"></p>
                 <div class="history-document-actions">
                   <button id="historyPrintBtn" onclick="printDoc()">พิมพ์ / PDF</button>
-                  <button id="historyRetryCancel" onclick="checkSaveResult()" hidden>ตรวจผลบันทึก</button>
+                  <button id="historyRetryCancel" onclick="retryEditedDoc()" hidden>ตรวจผล / ส่งซ้ำ</button>
                   <button id="editBtn" onclick="editSavedDoc()" disabled>แก้ไขรายการ</button>
-                  <button id="saveEditBtn" class="primary" onclick="saveEditedDoc()" disabled>บันทึกการแก้ไข</button>
+                  <button id="saveEditBtn" type="button" class="primary" onclick="saveEditedDoc()" disabled>บันทึกการแก้ไข</button>
                 </div>
                 <p class="note space">แก้ไขได้ในสถานะขอเบิกและกำลังจัดเตรียม เมื่อผู้เตรียมกดอัปเดตจะเป็น “เตรียมส่งมอบ” และล็อกการแก้ไข แม้เตรียมสินค้าไม่ครบ</p>
               </div>
@@ -277,11 +277,12 @@
     <dialog id="productDialog" aria-labelledby="productDialogTitle">
       <form id="productForm">
         <div class="eyebrow">รายการสินค้าที่เลือก</div>
-        <h2 id="productDialogTitle">ระบุจำนวนและหน่วยสินค้า</h2>
+        <h2 id="productDialogTitle" tabindex="-1" autofocus>ระบุจำนวนและหน่วยสินค้า</h2>
         <p id="selectedProductName" class="selected-product-name"></p>
         <p id="selectedProductBarcode" class="muted"></p>
         <div class="fields">
           <label>จำนวน *<input id="selectedProductQty" type="number" min="0.001" max="1000000" step="any" value="1" required /></label>
+          <label>หมายเหตุ<textarea id="selectedProductNote" rows="2" maxlength="500" placeholder="เช่น ขอแบบสุกน้อย หรือใช้สำหรับงานพิเศษ"></textarea></label>
           <label>หน่วยสินค้า *<select id="selectedProductUnit" required></select></label>
         </div>
         <p id="productDialogMessage" class="status" role="status" aria-live="polite"></p>
@@ -333,6 +334,14 @@
         </button>
       </div>
     </dialog>
+    <dialog id="historyUnsavedDialog" aria-labelledby="historyUnsavedTitle">
+      <h2 id="historyUnsavedTitle">ยังไม่ได้บันทึกการแก้ไข</h2>
+      <p>มีข้อมูลที่แก้ไขค้างอยู่ บันทึกการแก้ไขก่อนปิดใบเบิกได้จากปุ่มด้านล่าง</p>
+      <div class="actions">
+        <button type="button" autofocus onclick="document.getElementById('historyUnsavedDialog').close()">กลับไปแก้ไข</button>
+        <button id="historySaveAndCloseBtn" type="button" class="primary" onclick="confirmCloseHistoryWithSave()">ปิดใบเบิกแล้วบันทึกการแก้ไข</button>
+      </div>
+    </dialog>
     <dialog id="validationDialog" role="alertdialog" aria-labelledby="validationTitle" aria-describedby="validationMessage">
       <h2 id="validationTitle">กรุณาตรวจสอบข้อมูล</h2>
       <p id="validationMessage" class="validation-message"></p>
@@ -343,9 +352,9 @@
     <section id="printArea"></section>
 
     <script async src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-    <script src="Shared.js?v=island-toast-20261029"></script>
-    <script src="Requisition.js?v=history-compact-labels-20261029"></script>
-    <script src="Preparation.js?v=preparation-scan-autoclose-20261029"></script>
-    <script src="App.js?v=split-workflows-20261029"></script>
+    <script src="Shared.js?v=preparation-out-20261030"></script>
+    <script src="Requisition.js?v=preparation-out-20261030"></script>
+    <script src="Preparation.js?v=preparation-out-20261030"></script>
+    <script src="App.js?v=preparer-notes-20261030"></script>
   </body>
 </html>
