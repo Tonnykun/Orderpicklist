@@ -1278,7 +1278,7 @@ body.scanner-open {
     font-size: 0;
     line-height: 0;
   }
-  #printArea .print-items tbody tr:last-child td { border-bottom: 0.5pt solid #aaa; }
+  #printArea .print-items tbody:last-child tr:last-child td { border-bottom: 0.5pt solid #aaa; }
   #printArea .print-item-total {
     border: 0.5pt solid #aaa;
     border-top: 0;
@@ -1317,7 +1317,21 @@ body.scanner-open {
     margin: 0 2mm 3mm;
   }
   #printArea .print-signatures p { margin: 2mm 0 0; }
-  #printArea .print-items tr {
+  #printArea .print-items tbody.print-item-block,
+  #printArea .print-items tr,
+  #printArea .print-items td {
     break-inside: avoid;
+    page-break-inside: avoid;
   }
+  #printArea.preparation-print .print-items,
+  #printArea.preparation-print .print-items td,
+  #printArea.preparation-print .print-items th,
+  #printArea.preparation-print .print-items tbody tr:last-child td { border: 0; }
+  #printArea.preparation-print .print-items th { background: transparent; border-bottom: 0.5pt solid #bbb; }
+  #printArea.preparation-print .print-items td { padding-top: 2mm; padding-bottom: 2mm; }
+  #printArea .print-preparation-group { margin-top: 5mm; }
+  #printArea .print-preparation-group h2 { display: flex; justify-content: space-between; font-size: 11pt; margin: 0 0 2mm; break-after: avoid; }
+  #printArea .print-preparation-group h2 span { font-size: 9pt; font-weight: normal; }
+  #printArea .print-group-empty { color: #555; font-size: 9pt; margin: 1mm 0 3mm; }
+  #printArea.preparation-print .print-item-total { border: 0; border-top: 0.5pt solid #aaa; margin-top: 4mm; }
 }

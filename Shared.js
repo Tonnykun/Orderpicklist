@@ -743,9 +743,8 @@ async function markDocumentPrinted(context) {
 
 function renderRequisitionPrint(documentData, number, printContext = null, preparationResult = false) {
   const printItems = documentData.items;
-  const rows = printItems
-    .map(
-      (item, index) => `
+  const renderRow = (item, index) => `
+    <tbody class="print-item-block">
     <tr>
       <td class="print-center">${index + 1}</td>
       <td class="print-code">${esc(item.barcode)}</td>
@@ -756,14 +755,40 @@ function renderRequisitionPrint(documentData, number, printContext = null, prepa
       <td class="print-center">${esc(preparationResult ? (item.preparedUnit || item.unit) : item.unit)}</td>
       ${preparationResult ? `<td class="print-center">${item.completion === "full" || (!item.completion && item.prepared) ? "ครบ" : item.completion === "partial" ? "ได้บางส่วน" : item.completion === "out" ? "หมด" : "ยังไม่ระบุ"}</td>` : ""}
     </tr>
-  `,
-    )
-    .join("");
+    </tbody>
+  `;
+  const rows = printItems.map(renderRow).join("");
 
   const emptyPrintRows = Array.from({ length: Math.max(0, 20 - printItems.length) }, () =>
     '<tr class="print-empty-row" aria-hidden="true"><td></td><td></td><td></td><td></td><td></td>' + (preparationResult ? '<td></td>' : '') + '</tr>'
   ).join("");
 
+  const renderTable = (content, filler = "") => `<table class="print-items">
+      <colgroup>${preparationResult
+        ? '<col style="width:5%"><col style="width:18%"><col style="width:39%"><col style="width:12%"><col style="width:12%"><col style="width:14%">'
+        : '<col style="width:6%"><col style="width:20%"><col style="width:50%"><col style="width:12%"><col style="width:12%">'}</colgroup>
+      <thead><tr><th>#</th><th>บาร์โค้ด</th><th>รายการสินค้า</th><th>${preparationResult ? "จำนวนที่ได้" : "จำนวนเบิก"}</th><th>หน่วยนับ</th>${preparationResult ? '<th>สถานะรายการ</th>' : ''}</tr></thead>
+      ${content}${filler ? `<tbody>${filler}</tbody>` : ""}
+    </table>`;
+  const groups = [
+    { status: "full", title: "ครบ" },
+    { status: "partial", title: "ได้บางส่วน" },
+    { status: "out", title: "หมด" },
+  ];
+  const completionOf = (item) => item.completion || (item.prepared ? "full" : "none");
+  if (printItems.some((item) => !groups.some((group) => group.status === completionOf(item)))) {
+    groups.push({ status: "none", title: "รายการที่ยังไม่ระบุผล" });
+  }
+  const groupedTables = groups.map((group) => {
+    const entries = printItems.map((item, index) => ({ item, index })).filter(({ item }) =>
+      group.status === "none" ? !["full", "partial", "out"].includes(completionOf(item)) : completionOf(item) === group.status);
+    return `<section class="print-preparation-group" data-status="${group.status}">
+      <h2>${group.title}<span>${entries.length} รายการ</span></h2>
+      ${entries.length ? renderTable(entries.map(({ item, index }) => renderRow(item, index)).join("")) : '<p class="print-group-empty">ไม่มีรายการ</p>'}
+    </section>`;
+  }).join("");
+
+  $("printArea").className = preparationResult ? "preparation-print" : "";
   $("printArea").innerHTML = `
     <div class="print-heading">
       <div class="print-brand">MM Bakery<small>เอกสารเบิกสินค้า</small></div>
@@ -779,29 +804,14 @@ function renderRequisitionPrint(documentData, number, printContext = null, prepa
         <p><strong>วันที่ขอเบิก</strong><span>${esc(documentData.date.split("-").reverse().join("/"))}</span></p>
       </div>
     </div>
-    <table class="print-items">
-      <colgroup>${preparationResult
-        ? '<col style="width:5%"><col style="width:18%"><col style="width:39%"><col style="width:12%"><col style="width:12%"><col style="width:14%">'
-        : '<col style="width:6%"><col style="width:20%"><col style="width:50%"><col style="width:12%"><col style="width:12%">'}</colgroup>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>บาร์โค้ด</th>
-          <th>รายการสินค้า</th>
-          <th>${preparationResult ? "จำนวนที่ได้" : "จำนวนเบิก"}</th>
-          <th>หน่วยนับ</th>
-          ${preparationResult ? '<th>สถานะรายการ</th>' : ''}
-        </tr>
-      </thead>
-      <tbody>${rows}${emptyPrintRows}</tbody>
-    </table>
+    ${preparationResult ? groupedTables : renderTable(rows, emptyPrintRows)}
     <div class="print-item-total">รวมรายการสินค้าทั้งหมด <strong>${printItems.length}</strong> รายการ</div>
     <div class="print-reason"><strong>เหตุผลในการเบิก / หมายเหตุ</strong><p>${esc(documentData.reason || "—")}</p></div>
-    <div class="print-signatures">
+    ${preparationResult ? "" : `<div class="print-signatures">
       <div><div class="print-sign-line"></div><strong>ผู้ขอเบิก</strong><p>วันที่ ______ / ______ / ______</p></div>
       <div><div class="print-sign-line"></div><strong>ผู้อนุมัติ</strong><p>วันที่ ______ / ______ / ______</p></div>
       <div><div class="print-sign-line"></div><strong>ผู้จ่ายสินค้า</strong><p>วันที่ ______ / ______ / ______</p></div>
-    </div>
+    </div>`}
   `;
 
   try {
