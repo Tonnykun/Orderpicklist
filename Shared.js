@@ -779,17 +779,7 @@ function renderRequisitionPrint(documentData, number, printContext = null, prepa
   if (printItems.some((item) => !groups.some((group) => group.status === completionOf(item)))) {
     groups.push({ status: "none", title: "รายการที่ยังไม่ระบุผล" });
   }
-  const groupedTables = groups.map((group) => {
-    const entries = printItems.map((item, index) => ({ item, index })).filter(({ item }) =>
-      group.status === "none" ? !["full", "partial", "out"].includes(completionOf(item)) : completionOf(item) === group.status);
-    return `<section class="print-preparation-group" data-status="${group.status}">
-      <h2>${group.title}<span>${entries.length} รายการ</span></h2>
-      ${entries.length ? renderTable(entries.map(({ item, index }) => renderRow(item, index)).join("")) : '<p class="print-group-empty">ไม่มีรายการ</p>'}
-    </section>`;
-  }).join("");
-
-  $("printArea").className = preparationResult ? "preparation-print" : "";
-  $("printArea").innerHTML = `
+  const documentHeader = `
     <div class="print-heading">
       <div class="print-brand">MM Bakery<small>เอกสารเบิกสินค้า</small></div>
       <div class="print-document-title"><h1>ใบเบิกสินค้า</h1><span>STOCK REQUISITION</span></div>
@@ -803,16 +793,32 @@ function renderRequisitionPrint(documentData, number, printContext = null, prepa
         <p><strong>เลขที่ใบเบิก</strong><span>${number}</span></p>
         <p><strong>วันที่ขอเบิก</strong><span>${esc(documentData.date.split("-").reverse().join("/"))}</span></p>
       </div>
-    </div>
-    ${preparationResult ? groupedTables : renderTable(rows, emptyPrintRows)}
+    </div>`;
+  const printSummary = `
     <div class="print-item-total">รวมรายการสินค้าทั้งหมด <strong>${printItems.length}</strong> รายการ</div>
     <div class="print-reason"><strong>เหตุผลในการเบิก / หมายเหตุ</strong><p>${esc(documentData.reason || "—")}</p></div>
     ${preparationResult ? "" : `<div class="print-signatures">
       <div><div class="print-sign-line"></div><strong>ผู้ขอเบิก</strong><p>วันที่ ______ / ______ / ______</p></div>
       <div><div class="print-sign-line"></div><strong>ผู้อนุมัติ</strong><p>วันที่ ______ / ______ / ______</p></div>
       <div><div class="print-sign-line"></div><strong>ผู้จ่ายสินค้า</strong><p>วันที่ ______ / ______ / ______</p></div>
-    </div>`}
-  `;
+    </div>`}`;
+  const pageLayout = (content, categoryHeading = "") => `
+    <table class="print-page-layout">
+      <thead><tr><td>${documentHeader}${categoryHeading}</td></tr></thead>
+      <tbody><tr><td>${content}</td></tr></tbody>
+      <tfoot><tr><td><div class="print-page-end"></div></td></tr></tfoot>
+    </table>`;
+  const groupedTables = groups.map((group, groupIndex) => {
+    const entries = printItems.map((item, index) => ({ item, index })).filter(({ item }) =>
+      group.status === "none" ? !["full", "partial", "out"].includes(completionOf(item)) : completionOf(item) === group.status);
+    const categoryHeading = `<h2 class="print-category-heading">${group.title}<span>${entries.length} รายการ</span></h2>`;
+    const content = entries.length ? renderTable(entries.map(({ item, index }) => renderRow(item, index)).join("")) : '<p class="print-group-empty">ไม่มีรายการ</p>';
+    return `<section class="print-preparation-group" data-status="${group.status}">${pageLayout(
+      content + (groupIndex === groups.length - 1 ? printSummary : ""), categoryHeading
+    )}</section>`;
+  }).join("");
+  $("printArea").className = preparationResult ? "preparation-print" : "";
+  $("printArea").innerHTML = preparationResult ? groupedTables : pageLayout(renderTable(rows, emptyPrintRows) + printSummary);
 
   try {
     if (typeof window.print !== "function") throw new Error("Printing unavailable");
