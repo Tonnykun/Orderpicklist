@@ -46,6 +46,8 @@ let draftNumber = "";
 
 let draftSource = null;
 
+let documentCache = new Map();
+
 let Cache = new Map();
 
 let CacheSource = "";
