@@ -34,7 +34,7 @@ let requestId = newId();
 
 let selectedProduct = null;
 
-let History = [];
+let documentHistory = [];
 
 let historyBusy = false;
 
@@ -48,9 +48,7 @@ let draftSource = null;
 
 let documentCache = new Map();
 
-let Cache = new Map();
-
-let CacheSource = "";
+let documentCacheSource = "";
 
 let historyGeneration = 0;
 
@@ -60,17 +58,17 @@ let historyPreloadPromise = Promise.resolve();
 
 function historySourceKey(source) { return source ? source.id + "|" + source.endpoint : ""; }
 
-async function preloadHistorys(source, s, generation) {
+async function preloadHistoryDocuments(source, documents, generation) {
   const sourceKey = historySourceKey(source);
   try {
-    for (let offset = 0; offset < s.length; offset += 15) {
+    for (let offset = 0; offset < documents.length; offset += 15) {
       if (generation !== historyGeneration || historySourceKey(settings) !== sourceKey) return;
-      const response = await readBridge(source, "Batch", {
-        requestIds: JSON.stringify(s.slice(offset, offset + 15).map((doc) => doc.requestId)),
+      const response = await readBridge(source, "documentBatch", {
+        requestIds: JSON.stringify(documents.slice(offset, offset + 15).map((doc) => doc.requestId)),
       });
-      if (!Array.isArray(response.s)) throw new Error("กรุณาอัปเดต Code.gs ให้รองรับการโหลดใบเบิกเบื้องหลัง");
+      if (!Array.isArray(response.documents)) throw new Error("กรุณาอัปเดต Code.gs ให้รองรับการโหลดใบเบิกเบื้องหลัง");
       if (generation !== historyGeneration || historySourceKey(settings) !== sourceKey) return;
-      for (const doc of response.s) {
+      for (const doc of response.documents) {
         if (doc?.requestId && Array.isArray(doc.items) && doc.revision) documentCache.set(doc.requestId, doc);
       }
       $("historyMessage").textContent = `โหลดรายละเอียดใบเบิกแล้ว ${documentCache.size}/${documents.length} ใบ`;
@@ -152,7 +150,6 @@ function renderHistoryOptions() {
   select.value = matches.some((doc) => doc.requestId === selected) ? selected : "";
 }
 
-let documentCache = new Map();
 async function loadRequisitionHistory(refreshAfterBusy = false) {
   if (historyBusy) {
     if (refreshAfterBusy) historyReloadQueued = true;
@@ -576,9 +573,14 @@ async function saveDoc(origin = "draft") {
   }
 }
 
+function showPreparationResult() {
+  return saved && !editing &&
+    ["เตรียมส่งมอบ", "ส่งมอบแล้ว"].includes(documentStage(currentDocumentStatus));
+}
+
 function render() {
   const historical = viewingHistoryDocument();
-  const fulfilled = historical && saved && !editing && ["เตรียมส่งมอบ", "ส่งมอบแล้ว"].includes(documentStage(currentDocumentStatus));
+  const fulfilled = historical && showPreparationResult();
   const rows = items
     .map(
       (source, index) => {
@@ -845,7 +847,7 @@ function printDoc() {
 
   const documentData = payload();
   const number = esc($("docno").value) + (saved ? "" : editing ? " (ฉบับแก้ไข — ยังไม่ได้บันทึก)" : " (ฉบับร่าง — ยังไม่ได้บันทึก)");
-  return renderRequisitionPrint(documentData, number, printContext, saved && !editing && ["เตรียมส่งมอบ", "ส่งมอบแล้ว"].includes(documentStage(currentDocumentStatus)));
+  return renderRequisitionPrint(documentData, number, printContext, showPreparationResult());
 }
 
 function resetDraft() {
