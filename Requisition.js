@@ -152,6 +152,7 @@ function renderHistoryOptions() {
   select.value = matches.some((doc) => doc.requestId === selected) ? selected : "";
 }
 
+let documentCache = new Map();
 async function loadRequisitionHistory(refreshAfterBusy = false) {
   if (historyBusy) {
     if (refreshAfterBusy) historyReloadQueued = true;
