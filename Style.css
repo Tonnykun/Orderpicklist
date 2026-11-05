@@ -58,10 +58,13 @@ html {
 .history-items-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin: 16px 0;
 }
+.history-items-toolbar strong { font-size: 20px; }
+.history-items-toolbar input[type="search"] { flex: 1 1 230px; min-width: 0; }
+.history-items-toolbar button { margin-left: auto; }
 .history-items-toolbar button { min-height: 44px; }
 #historyDialog input:disabled,
 #historyDialog select:disabled,
@@ -221,7 +224,7 @@ html {
 .preparation-update-actions button { flex-shrink: 0; min-height: 44px; }
 .preparation-buttons {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 10px;
   width: 100%;
 }
@@ -230,7 +233,7 @@ html {
 @media (max-width: 560px) {
   .preparation-heading button { max-width: 58%; padding: 10px; font-size: 12px; }
   .preparation-buttons button { padding: 10px 8px; font-size: 12px; }
-  .preparation-buttons { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .preparation-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
   .preparation-buttons #preparationScanBtn { justify-self: stretch; }
 }
 .preparation-item {

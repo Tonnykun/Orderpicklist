@@ -147,11 +147,14 @@ function updatePreparationControls() {
   const locked = preparationBusy || !!pendingPreparation;
   const request = currentPreparationDocument();
   const ready = request && !editableDocumentStatus(request.status);
+  const exportReady = request && ["เตรียมส่งมอบ", "ส่งมอบแล้ว"].includes(documentStage(request.status));
   $("preparationRequests").querySelectorAll("input, textarea, select, button").forEach((input) => { input.disabled = locked || ready; });
   $("preparationSelect").disabled = locked;
   $("preparationCloseBtn").disabled = locked;
   $("preparationScanBtn").disabled = locked || ready || !request;
   $("preparationPrintBtn").disabled = locked || printStatusBusy || !request;
+  $("preparationExportBtn").hidden = !exportReady;
+  $("preparationExportBtn").disabled = locked || !exportReady || !request.items.some((item) => preparationItemAmount(request, item).completion === "full");
   $("loadPreparationBtn").disabled = locked;
   $("updatePreparationBtn").disabled = preparationBusy || (!pendingPreparation && !preparationRequests.some((request) => request.requestId === preparationSelectedId));
   $("updatePreparationBtn").textContent = pendingPreparation ? "ตรวจผล / อัปเดตซ้ำ" : "อัปเดตสถานะ";
@@ -445,4 +448,44 @@ function printPreparationDocument() {
   return renderRequisitionPrint({ ...request, items: printItems }, esc(request.number), {
     requestId: request.requestId, revision: request.revision || "original", source: { ...(request.source || settings) },
   }, true);
+}
+
+function exportPreparationExcel(source = "preparation") {
+  const fromHistory = source === "history";
+  const request = fromHistory
+    ? { number: $("docno").value, status: currentDocumentStatus, items }
+    : currentPreparationDocument();
+  if (busy || pending || (fromHistory
+    ? !viewingHistoryDocument() || !saved || editing
+    : preparationBusy || pendingPreparation || activeUser?.role !== "preparation") ||
+      !request || !["เตรียมส่งมอบ", "ส่งมอบแล้ว"].includes(documentStage(request.status))) return;
+  if (typeof XLSX === "undefined") {
+    notify("โหลดเครื่องมือส่งออก Excel ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วโหลดหน้าใหม่", true);
+    return;
+  }
+
+  const completeItems = request.items.filter((item) =>
+    (item.completion || (item.prepared ? "full" : "none")) === "full");
+  if (!completeItems.length) {
+    notify("ใบเบิกนี้ไม่มีรายการที่ระบุสถานะครบ", true);
+    return;
+  }
+
+  const rows = [["product_id", "product_name", "price", "stock_qty", "barcode"]];
+  for (const item of completeItems) {
+    const qty = Number(item.preparedQty ?? item.qty);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      notify("จำนวนที่จัดได้ของรายการครบไม่ถูกต้อง กรุณาโหลดใบเบิกใหม่", true);
+      return;
+    }
+    rows.push(["", String(item.name || ""), "", qty, String(item.barcode || "")]);
+  }
+
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet["!cols"] = [{ wch: 14 }, { wch: 48 }, { wch: 14 }, { wch: 14 }, { wch: 22 }];
+  for (let row = 2; row <= rows.length; row++) sheet[`E${row}`].t = "s";
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "รายการสินค้า");
+  const number = String(request.number || request.requestId || "ใบเบิก").replace(/[\\/:*?"<>|]/g, "-");
+  XLSX.writeFile(workbook, `${number}.xlsx`);
 }

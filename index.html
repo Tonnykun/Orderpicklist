@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <title>MM Bakery • ใบเบิกสินค้า</title>
-    <link rel="stylesheet" href="Style.css?v=print-category-pages-20261103" />
+    <link rel="stylesheet" href="Style.css?v=history-item-search-20261105" />
   </head>
   <body>
     <header>
@@ -164,6 +164,7 @@
         <div class="preparation-buttons">
           <button id="preparationScanBtn" onclick="openPreparationScanner()" disabled>▣ สแกนตรวจสอบสินค้า</button>
           <button id="preparationPrintBtn" onclick="printPreparationDocument()" disabled>พิมพ์ / PDF</button>
+          <button id="preparationExportBtn" onclick="exportPreparationExcel()" hidden disabled>ส่งออก Excel</button>
           <button id="updatePreparationBtn" class="primary" onclick="updatePreparationStatus()" disabled>อัปเดตสถานะ</button>
         </div>
       </div>
@@ -186,6 +187,7 @@
         </div>
                 <div class="history-items-toolbar">
                   <strong>รายการสินค้า</strong>
+                  <input id="historyItemSearch" type="search" placeholder="ค้นหาชื่อสินค้าหรือบาร์โค้ด" aria-label="ค้นหารายการสินค้าในใบเบิก" oninput="filterHistoryItems()" />
                   <button id="historyAddBtn" class="primary" type="button" onclick="openHistoryScanner()" hidden>＋ เพิ่มรายการ</button>
                 </div>
                 <div class="tablewrap">
@@ -198,6 +200,7 @@
                 <p id="historyDialogMessage" class="status" role="status" aria-live="polite"></p>
                 <div class="history-document-actions">
                   <button id="historyPrintBtn" onclick="printDoc()">พิมพ์ / PDF</button>
+                  <button id="historyExportBtn" type="button" onclick="exportPreparationExcel('history')" hidden disabled>ส่งออก Excel</button>
                   <button id="historyRetryCancel" onclick="retryEditedDoc()" hidden>ตรวจผล / ส่งซ้ำ</button>
                   <button id="editBtn" onclick="editSavedDoc()" disabled>แก้ไขรายการ</button>
                   <button id="saveEditBtn" type="button" class="primary" onclick="saveEditedDoc()" disabled>บันทึกการแก้ไข</button>
@@ -352,9 +355,10 @@
     <section id="printArea"></section>
 
     <script async src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="Shared.js?v=print-category-pages-20261103"></script>
-    <script src="Requisition.js?v=20261104-history-print-fix"></script>
-    <script src="Preparation.js?v=preparation-out-20261030"></script>
+    <script src="Requisition.js?v=history-item-search-20261105"></script>
+    <script src="Preparation.js?v=preparation-excel-positive-20261105"></script>
     <script src="App.js?v=preparer-notes-20261030"></script>
   </body>
 </html>

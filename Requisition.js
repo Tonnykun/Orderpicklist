@@ -193,6 +193,7 @@ async function loadRequisitionHistory(refreshAfterBusy = false) {
 }
 
 function showSavedDocument(doc) {
+  $("historyItemSearch").value = "";
   draftNumber = "";
   draftSource = null;
   items = doc.items.map((item) => ({ ...item, note: item.note || "" }));
@@ -254,6 +255,9 @@ function state() {
   $("newBtn").disabled = busy || !!pending;
   $("userBtn").disabled = !!pending || !!pendingPreparation || preparationBusy || editing;
   $("historyPrintBtn").disabled = busy || printStatusBusy || !!pending || !historical;
+  const exportVisible = historical && saved && !editing && ["เตรียมส่งมอบ", "ส่งมอบแล้ว"].includes(documentStage(currentDocumentStatus));
+  $("historyExportBtn").hidden = !exportVisible;
+  $("historyExportBtn").disabled = busy || !!pending || !exportVisible || !items.some((item) => (item.completion || (item.prepared ? "full" : "none")) === "full");
   $("historyCloseBtn").disabled = busy || editSaveInFlight || !!pending;
   $("historyCloseBtn").textContent = "✕ ปิด";
   $("historyCloseBtn").setAttribute("aria-label", "ปิดใบเบิกย้อนหลัง");
@@ -573,17 +577,14 @@ async function saveDoc(origin = "draft") {
   }
 }
 
-function showPreparationResult() {
-  return saved && !editing &&
-    ["เตรียมส่งมอบ", "ส่งมอบแล้ว"].includes(documentStage(currentDocumentStatus));
-}
-
 function render() {
   const historical = viewingHistoryDocument();
-  const fulfilled = historical && showPreparationResult();
+  const fulfilled = historical && saved && !editing && documentStage(currentDocumentStatus) === "เตรียมส่งมอบ";
+  const itemSearch = historical ? $("historyItemSearch").value.trim().toLocaleLowerCase() : "";
   const rows = items
     .map(
       (source, index) => {
+        if (itemSearch && !`${source.name || ""} ${source.barcode || ""}`.toLocaleLowerCase().includes(itemSearch)) return "";
         const product = fulfilled ? { ...source, qty: source.preparedQty ?? (source.prepared ? source.qty : 0), unit: source.preparedUnit || source.unit } : source;
         return `
     <tr>
@@ -623,7 +624,7 @@ function render() {
     .join("");
 
   $("items").innerHTML = historical ? "" : rows;
-  $("historyItems").innerHTML = historical ? rows : "";
+  $("historyItems").innerHTML = historical ? rows || '<tr><td colspan="4">ไม่พบรายการสินค้า</td></tr>' : "";
   $("historyDocumentPanel").hidden = !historical;
   $("historyDocumentTitle").textContent = historical ? "ใบเบิก " + $("docno").value : "";
   for (const [key, input] of [["requester", "historyRequester"], ["department", "historyDepartment"], ["date", "historyDate"], ["reason", "historyReason"]]) $(input).value = $(key).value;
@@ -632,6 +633,10 @@ function render() {
   $("empty").hidden = !historical && !!items.length;
   $("scannerCount").textContent = items.length + " รายการในใบเบิก";
   state();
+}
+
+function filterHistoryItems() {
+  render();
 }
 
 function removeItem(i) {
@@ -847,7 +852,7 @@ function printDoc() {
 
   const documentData = payload();
   const number = esc($("docno").value) + (saved ? "" : editing ? " (ฉบับแก้ไข — ยังไม่ได้บันทึก)" : " (ฉบับร่าง — ยังไม่ได้บันทึก)");
-  return renderRequisitionPrint(documentData, number, printContext, showPreparationResult());
+  return renderRequisitionPrint(documentData, number, printContext, saved && !editing && documentStage(currentDocumentStatus) === "เตรียมส่งมอบ");
 }
 
 function resetDraft() {
