@@ -313,10 +313,12 @@ function clearPending() {
 
 function applySaved(number) {
   const wasEdit = pending?.operation === "update";
+  const savedItems = pending?.items;
   const revision = pending?.editId;
   const shouldClose = closeHistoryAfterSave;
   clearPending();
   if (wasEdit) {
+    items = savedItems;
     saved = true;
     editing = false;
     savedRevision = revision || savedRevision;
@@ -496,7 +498,9 @@ async function saveDoc(origin = "draft") {
 
   try {
     if (!pending) {
-      pending = { ...payload(), sheet: { ...settings }, hadUncertain: false,
+      const documentData = payload();
+      if (editing) documentData.items = withoutStalePreparation(documentData.items);
+      pending = { ...documentData, sheet: { ...settings }, hadUncertain: false,
         operation: editing ? "update" : "save", number: $("docno").value,
         documentStatus: currentDocumentStatus,
         ...(editing ? { editId: newId(), baseRevision: savedRevision } : {}) };
@@ -827,6 +831,20 @@ function payload() {
   };
 }
 
+function withoutStalePreparation(documentItems) {
+  if (!historyEditBaseline) return documentItems;
+  const originalItems = JSON.parse(historyEditBaseline).items;
+  return documentItems.map((item) => {
+    // การบันทึกฝั่งชีตเก็บผลจัดเดิมเฉพาะเมื่อข้อมูลรายการยังเหมือนเดิม
+    const unchanged = originalItems.some((original) => original.barcode === item.barcode &&
+      original.name === item.name && original.unit === item.unit && original.qty === item.qty &&
+      (original.note || "").trim() === (item.note || "").trim());
+    if (unchanged) return item;
+    const { prepared, preparedQty, preparedUnit, completion, preparerNote, preparationWriteId, ...requested } = item;
+    return requested;
+  });
+}
+
 function valid() {
   const missing = [];
   for (const [id, message] of [["requester", "กรุณากรอกชื่อผู้ขอเบิก"], ["department", "กรุณากรอกแผนก / หน่วยงาน"], ["date", "กรุณาระบุวันที่ขอเบิก"]]) {
@@ -851,8 +869,11 @@ function printDoc() {
   const printContext = saved && !editing ? { requestId, revision: savedRevision, source: { ...settings } } : null;
 
   const documentData = payload();
+  if (editing) documentData.items = withoutStalePreparation(documentData.items);
+  const preparationResult = viewingHistoryDocument() && (documentStage(currentDocumentStatus) === "เตรียมส่งมอบ" ||
+    items.some((item) => ["full", "partial", "out"].includes(item.completion) || (!item.completion && item.prepared)));
   const number = esc($("docno").value) + (saved ? "" : editing ? " (ฉบับแก้ไข — ยังไม่ได้บันทึก)" : " (ฉบับร่าง — ยังไม่ได้บันทึก)");
-  return renderRequisitionPrint(documentData, number, printContext, saved && !editing && documentStage(currentDocumentStatus) === "เตรียมส่งมอบ");
+  return renderRequisitionPrint(documentData, number, printContext, preparationResult);
 }
 
 function resetDraft() {
